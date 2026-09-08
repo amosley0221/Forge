@@ -8,8 +8,8 @@ import { APP_VERSION } from '../version.js';
 
 const A = COLORS.accent;
 
-/** First launch. Name the project, then connect a provider — or don't, and the
- *  app says plainly what still works without one. */
+/** First launch. Optionally name the project, then connect a provider — or
+ *  don't, and the app says plainly what still works without one. */
 export function Onboarding({ s }: { s: Session }) {
   const [step, setStep] = useState<'project' | 'provider'>('project');
   const [name, setName] = useState('');
@@ -17,6 +17,17 @@ export function Onboarding({ s }: { s: Session }) {
   const [key, setKey] = useState('');
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  /**
+   * Naming the project is a convenience, not a requirement — everywhere it is
+   * shown falls back to "Your project", and Settings can set it later. Making
+   * it mandatory just put a form between the user and the app.
+   */
+  const continuePastName = () => {
+    const trimmed = name.trim();
+    if (trimmed) s.updateSettings({ projectName: trimmed });
+    setStep('provider');
+  };
 
   const connect = async () => {
     const p = providerById(provider);
@@ -73,31 +84,20 @@ export function Onboarding({ s }: { s: Session }) {
             <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>Welcome to Forge</h1>
             <p style={{ fontSize: 13, color: COLORS.text2, lineHeight: 1.6, margin: '10px 0 20px' }}>
               Describe an object and Forge generates a 3D model for it, then keeps every version
-              you make. Start by naming your project.
+              you make. Name your project if you like — you can also do it later in Settings.
             </p>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Project name"
+              placeholder="Project name (optional)"
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && name.trim()) {
-                  s.updateSettings({ projectName: name.trim() });
-                  setStep('provider');
-                }
+                if (e.key === 'Enter') continuePastName();
               }}
               style={input}
             />
-            <button
-              type="button"
-              disabled={!name.trim()}
-              onClick={() => {
-                s.updateSettings({ projectName: name.trim() });
-                setStep('provider');
-              }}
-              style={{ ...primary, background: name.trim() ? A : '#8a5a22' }}
-            >
-              Continue
+            <button type="button" onClick={continuePastName} style={primary}>
+              {name.trim() ? 'Continue' : 'Skip for now'}
             </button>
             <div
               style={{

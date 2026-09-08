@@ -38,6 +38,17 @@ export function Onboarding({ s }: { s: MobileSession }) {
     await s.finishOnboarding();
   };
 
+  /**
+   * Naming the project is a convenience, not a requirement — everywhere it is
+   * shown falls back to "Your project", and Settings can set it later. Making
+   * it mandatory just put a form between the user and the app.
+   */
+  const continuePastName = () => {
+    const trimmed = name.trim();
+    if (trimmed) s.updateSettings({ projectName: trimmed });
+    setStep('provider');
+  };
+
   return (
     <div
       style={{
@@ -101,26 +112,23 @@ export function Onboarding({ s }: { s: MobileSession }) {
         <>
           <h2 style={{ fontSize: 18, fontWeight: 600, margin: '20px 0 0' }}>Name your project</h2>
           <p style={{ fontSize: 12, color: COLORS.muted, lineHeight: 1.6, margin: '8px 0 18px' }}>
-            Everything you make gets grouped under this. You can change it later in Settings.
+            Everything you make gets grouped under this. Optional — you can name it later in
+            Settings.
           </p>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Dustline"
             autoFocus
+            enterKeyHint="next"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') continuePastName();
+            }}
             style={input}
           />
           <div style={{ flex: 1 }} />
-          <button
-            type="button"
-            disabled={!name.trim()}
-            onClick={() => {
-              s.updateSettings({ projectName: name.trim() });
-              setStep('provider');
-            }}
-            style={{ ...primary, background: name.trim() ? A : '#8a5a22' }}
-          >
-            Continue
+          <button type="button" onClick={continuePastName} style={primary}>
+            {name.trim() ? 'Continue' : 'Skip for now'}
           </button>
         </>
       )}
