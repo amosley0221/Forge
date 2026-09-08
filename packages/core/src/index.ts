@@ -3,6 +3,7 @@ export * from './constants.js';
 export * from './assets.js';
 export * from './store.js';
 export * from './settings.js';
+export * from './http.js';
 export * from './blobstore.js';
 export * from './providers/index.js';
 export * from './generation.js';

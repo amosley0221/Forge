@@ -1,3 +1,4 @@
+import { http } from '../http.js';
 import { ProviderError, requestJson } from './types.js';
 import type { GenerateOptions, GenerationProvider, KeyCheck, TaskStatus } from './types.js';
 
@@ -48,14 +49,14 @@ function mapStatus(t: TripoTask): TaskStatus {
 
 /** Tripo takes an uploaded file token rather than an image URL. */
 async function uploadImage(key: string, imageUrl: string): Promise<{ token: string; type: string }> {
-  const blob = await (await fetch(imageUrl)).blob();
+  const blob = await (await http()(imageUrl)).blob();
   const type = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpeg';
   const form = new FormData();
   form.append('file', blob, `capture.${type === 'jpeg' ? 'jpg' : type}`);
 
   let res: Response;
   try {
-    res = await fetch(`${BASE}/upload`, { method: 'POST', headers: auth(key), body: form });
+    res = await http()(`${BASE}/upload`, { method: 'POST', headers: auth(key), body: form });
   } catch (e) {
     throw new ProviderError(
       `Tripo image upload could not be reached (${e instanceof Error ? e.message : 'network error'})`,

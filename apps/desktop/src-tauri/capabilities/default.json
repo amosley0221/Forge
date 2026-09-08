@@ -1,8 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions the Forge window needs.",
-  "windows": ["main"],
+  "description": "Permissions the Forge window needs, plus the provider hosts it may call.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -11,6 +13,29 @@
     "core:window:allow-close",
     "shell:allow-open",
     "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://api.meshy.ai/*"
+        },
+        {
+          "url": "https://api.tripo3d.ai/*"
+        },
+        {
+          "url": "https://*.amazonaws.com/*"
+        },
+        {
+          "url": "https://*.meshy.ai/*"
+        },
+        {
+          "url": "https://*.tripo3d.ai/*"
+        },
+        {
+          "url": "https://*.cloudfront.net/*"
+        }
+      ]
+    }
   ]
 }

@@ -1,3 +1,4 @@
+import { http } from '../http.js';
 /**
  * A 3D generation provider, driven with the user's own API key.
  *
@@ -60,10 +61,9 @@ export class ProviderError extends Error {
 }
 
 /**
- * Providers are called from a WebView, so CORS matters: on Android the
- * CapacitorHttp plugin patches fetch to go through native networking, and the
- * desktop shell routes through the Tauri HTTP plugin. In a plain browser
- * (`npm run dev`) these calls will be blocked, and the error says so.
+ * Providers are called from a WebView, so every request goes through the HTTP
+ * client the shell installed (see http.ts). In a plain browser there is none,
+ * CORS blocks the call, and the error below says so.
  */
 export async function requestJson<T>(
   url: string,
@@ -72,7 +72,7 @@ export async function requestJson<T>(
 ): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await http()(url, init);
   } catch (e) {
     throw new ProviderError(
       `${what} could not be reached (${e instanceof Error ? e.message : 'network error'}). ` +

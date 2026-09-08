@@ -1,3 +1,4 @@
+import { http } from '../http.js';
 import { ProviderError, requestJson } from './types.js';
 import type { TaskStatus } from './types.js';
 
@@ -212,7 +213,7 @@ export async function animateModel(opts: {
 }
 
 async function download(url: string, signal?: AbortSignal): Promise<Blob> {
-  const res = await fetch(url, { signal });
+  const res = await http()(url, { signal });
   if (!res.ok) throw new ProviderError(`Could not download the model (${res.status})`);
   const blob = await res.blob();
   if (!blob.size) throw new ProviderError('The downloaded model was empty');

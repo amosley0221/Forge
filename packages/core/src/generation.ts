@@ -1,3 +1,4 @@
+import { http } from './http.js';
 import { ProviderError } from './providers/types.js';
 import type { GenerateOptions, GenerationProvider, TaskState } from './providers/types.js';
 
@@ -114,7 +115,7 @@ export async function runGeneration(opts: RunGenerationOptions): Promise<Generat
   emit('downloading', 'Downloading the model');
   let res: Response;
   try {
-    res = await fetch(modelUrl, { signal });
+    res = await http()(modelUrl, { signal });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
     throw new ProviderError(
