@@ -10,6 +10,15 @@ import { RELEASES_PAGE, checkForUpdate, currentVersion, installUpdate } from './
 const A = COLORS.accent;
 
 export function SettingsSheet({ s }: { s: MobileSession }) {
+  const [credits, setCredits] = useState<number | null>(null);
+
+  // Read the balance whenever this sheet opens and after any job, so the cost
+  // of a generation can be seen rather than guessed at.
+  useEffect(() => {
+    if (!s.credentials.provider) return;
+    void s.providerBalance().then(setCredits);
+  }, [s.credentials.provider, s.job.running]);
+
   const [provider, setProvider] = useState<ProviderId>(s.credentials.provider ?? 'meshy');
   const [key, setKey] = useState('');
   const [checking, setChecking] = useState(false);
@@ -122,6 +131,11 @@ export function SettingsSheet({ s }: { s: MobileSession }) {
         {s.credentials.provider ? (
           <>
             <Row label="Connected" value={providerById(s.credentials.provider)?.name ?? '—'} />
+            <Row label="Credits left" value={credits === null ? '—' : credits.toLocaleString()} />
+            <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '4px 0 10px' }}>
+              A model is charged as two tasks — the mesh, then the texture stage. Repainting,
+              rigging and each motion clip are charged separately again.
+            </p>
             <button type="button" onClick={() => void disconnect()} style={outline}>
               Disconnect and remove the key
             </button>

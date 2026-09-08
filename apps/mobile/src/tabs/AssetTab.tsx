@@ -76,18 +76,27 @@ export function AssetTab({ s }: { s: MobileSession }) {
             onPoseBone={setHeld}
           />
 
-          {riggedInFile && (
-            <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'flex', gap: 6 }}>
-              {pose && (
-                <button type="button" onClick={() => viewer.current?.resetPose()} style={hudBtn(false)}>
-                  Reset
-                </button>
-              )}
-              <button type="button" onClick={() => setPose(!pose)} style={hudBtn(pose)}>
-                {pose ? (held ?? 'Posing') : 'Pose'}
+          {/* Always shown, so the mode is discoverable before the model is
+              rigged — hiding it just made it look like the feature was not
+              there. */}
+          <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'flex', gap: 6 }}>
+            {pose && (
+              <button type="button" onClick={() => viewer.current?.resetPose()} style={hudBtn(false)}>
+                Reset
               </button>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              onClick={() =>
+                riggedInFile
+                  ? setPose(!pose)
+                  : s.say('Posing needs a skeleton — rig the model first.')
+              }
+              style={{ ...hudBtn(pose), color: riggedInFile ? undefined : COLORS.disabled }}
+            >
+              {pose ? (held ?? 'Posing') : 'Pose'}
+            </button>
+          </div>
           {a.clips.length > 0 && (
             <div
               style={{

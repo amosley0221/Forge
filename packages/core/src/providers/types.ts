@@ -48,6 +48,8 @@ export interface GenerationProvider {
   textTo3D(key: string, opts: GenerateOptions): Promise<string>;
   imageTo3D(key: string, opts: GenerateOptions & { imageUrl: string }): Promise<string>;
   status(key: string, taskId: string): Promise<TaskStatus>;
+  /** Credits remaining, when the provider exposes them. */
+  balance?(key: string): Promise<number | null>;
   /**
    * Providers that build geometry and texture as separate, separately-charged
    * tasks expose the second one here. Without it a model comes back untextured

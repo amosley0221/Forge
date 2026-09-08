@@ -4,7 +4,7 @@ import type { GenerationProvider, ProviderId } from './types.js';
 
 export * from './types.js';
 export { meshy, meshyRawTaskId, fetchTaskAssets } from './meshy.js';
-export { listRecentJobs, startRetexture, startTextureStage } from './meshy.js';
+export { fetchBalance, listRecentJobs, startRetexture, startTextureStage } from './meshy.js';
 export type { MeshyTaskAssets, ProviderJob, RetextureOptions } from './meshy.js';
 export { tripo } from './tripo.js';
 export * from './meshy-rig.js';

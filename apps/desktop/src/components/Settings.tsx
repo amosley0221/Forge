@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { COLORS, PROVIDERS, STYLES, formatBytes, httpClientName, providerById } from '@forge/core';
 import type { ProviderId } from '@forge/core';
 import { Chip, Panel, ProviderJobs, SectionLabel, Spinner, SyncSettings, mono } from '@forge/ui';
@@ -38,6 +38,19 @@ export function Settings({ s }: { s: Session }) {
   const [updateNote, setUpdateNote] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  const [credits, setCredits] = useState<number | null>(null);
+  const [loadingCredits, setLoadingCredits] = useState(false);
+
+  // Read the balance whenever Settings opens, and again after any job, so the
+  // cost of a generation can be seen rather than guessed at.
+  useEffect(() => {
+    if (!s.credentials.provider) return;
+    setLoadingCredits(true);
+    void s.providerBalance().then((n) => {
+      setCredits(n);
+      setLoadingCredits(false);
+    });
+  }, [s.credentials.provider, s.job.running]);
 
   const cachedFiles = s.assets.reduce((n, a) => n + a.versions.filter((v) => v.fileId).length, 0);
   const cachedBytes = s.assets.reduce(
@@ -112,6 +125,43 @@ export function Settings({ s }: { s: Session }) {
               <Row label="Key storage">
                 {secretsAreSecure() ? 'OS keychain' : 'browser storage (dev)'}
               </Row>
+              <Row label="Credits left">
+                {loadingCredits ? (
+                  <Spinner size={11} />
+                ) : credits === null ? (
+                  '—'
+                ) : (
+                  <>
+                    {credits.toLocaleString()}{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoadingCredits(true);
+                        void s.providerBalance().then((n) => {
+                          setCredits(n);
+                          setLoadingCredits(false);
+                        });
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: A,
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        padding: 0,
+                        marginLeft: 6,
+                      }}
+                    >
+                      refresh
+                    </button>
+                  </>
+                )}
+              </Row>
+              <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '6px 0 0' }}>
+                A model is charged as two tasks — the mesh, then the texture stage. Repainting,
+                rigging and each motion clip are charged separately again. Refresh before and after
+                a job to see exactly what it cost.
+              </p>
               <button
                 type="button"
                 onClick={async () => {

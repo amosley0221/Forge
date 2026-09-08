@@ -948,6 +948,22 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     [requireMeshy, storeModel, device, upsert, rememberTask, forgetTask, markTaskFailed],
   );
 
+  /**
+   * Credits left on the connected key. Read it before and after a job to see
+   * what that job actually cost — a model is billed as a mesh task plus a
+   * texture task, and rigging and each clip are charged on top.
+   */
+  const providerBalance = useCallback(async (): Promise<number | null> => {
+    const provider = providerById(credentials.provider);
+    if (!provider?.balance || !credentials.apiKey) return null;
+    try {
+      return await provider.balance(credentials.apiKey);
+    } catch {
+      // A balance we cannot read is not worth an error panel over.
+      return null;
+    }
+  }, [credentials]);
+
   /** The motion library the provider offers for a rigged model. */
   const motionActions = useCallback(async (): Promise<MeshyAction[]> => {
     try {
@@ -1056,6 +1072,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     syncState,
     syncNow,
     restyle,
+    providerBalance,
     connectSync,
     disconnectSync,
     syncConnected: Boolean(syncConfig?.enabled && syncToken),

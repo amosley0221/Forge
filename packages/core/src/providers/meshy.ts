@@ -247,6 +247,23 @@ export async function startRetexture(key: string, opts: RetextureOptions): Promi
   return 'tex:' + created.result;
 }
 
+/**
+ * Credits left on this key.
+ *
+ * Worth surfacing because a model is not one charge: the mesh and the texture
+ * stage are billed as separate tasks, as is a retexture, a rig and each
+ * animation clip. Rather than quote numbers that change, Forge shows the real
+ * balance so the cost of anything can be read off before and after.
+ */
+export async function fetchBalance(key: string): Promise<number | null> {
+  const res = await requestJson<{ balance?: number }>(
+    `${BASE}/v1/balance`,
+    { headers: auth(key) },
+    'Meshy balance',
+  );
+  return typeof res.balance === 'number' ? res.balance : null;
+}
+
 export const meshy: GenerationProvider = {
   id: 'meshy',
   name: 'Meshy',
@@ -318,6 +335,8 @@ export const meshy: GenerationProvider = {
     label: 'Painting the textures',
     start: startTextureStage,
   },
+
+  balance: fetchBalance,
 
   async status(key: string, taskId: string): Promise<TaskStatus> {
     const path = pathFor(taskId);

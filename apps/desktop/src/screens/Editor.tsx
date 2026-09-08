@@ -7,21 +7,35 @@ import type { Session } from '../session.js';
 
 const A = COLORS.accent;
 
-function HudPill({ label, on, onClick }: { label: string; on?: boolean; onClick?: () => void }) {
+function HudPill({
+  label,
+  on,
+  onClick,
+  /** Visible but not usable yet — the tooltip says what would enable it. */
+  disabled,
+  title,
+}: {
+  label: string;
+  on?: boolean;
+  onClick?: () => void;
+  disabled?: boolean;
+  title?: string;
+}) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      title={title}
       style={{
         padding: '4px 10px',
         borderRadius: 6,
         border: `1px solid ${on ? COLORS.accentBorder2 : COLORS.hairline}`,
         background: 'rgba(27,28,32,.85)',
         backdropFilter: 'blur(8px)',
-        color: on ? A : COLORS.muted,
+        color: disabled ? COLORS.disabled : on ? A : COLORS.muted,
         fontFamily: mono,
         fontSize: 10,
-        cursor: onClick ? 'pointer' : 'default',
+        cursor: disabled ? 'not-allowed' : onClick ? 'pointer' : 'default',
         whiteSpace: 'nowrap',
       }}
     >
@@ -101,12 +115,20 @@ export function Editor({ s }: { s: Session }) {
       >
         <HudPill label={s.wire ? 'Shaded + wire' : 'Shaded'} on={s.wire} onClick={() => s.setWire(!s.wire)} />
         <HudPill label="Turntable" on={s.turntable} onClick={() => s.setTurntable(!s.turntable)} />
-        {riggedInFile && (
-          <HudPill label="Pose" on={pose} onClick={() => setPose(!pose)} />
-        )}
-        {pose && (
-          <HudPill label="Reset pose" onClick={() => viewer.current?.resetPose()} />
-        )}
+        {/* Always shown, so the mode is discoverable before the model is rigged
+            — hiding it just made it look like the feature was not there. */}
+        <HudPill
+          label="Pose"
+          on={pose}
+          disabled={!riggedInFile}
+          title={
+            riggedInFile
+              ? 'Drag a limb to bend it'
+              : 'Posing needs a skeleton — use “Rig this model” first'
+          }
+          onClick={() => setPose(!pose)}
+        />
+        {pose && <HudPill label="Reset pose" onClick={() => viewer.current?.resetPose()} />}
         <HudPill
           label={
             pose
@@ -115,7 +137,9 @@ export function Editor({ s }: { s: Session }) {
                 : 'drag a limb to bend it · drag the background to orbit'
               : s.selected
                 ? `${s.selected} selected`
-                : 'click a part to select · drag to orbit · wheel to zoom'
+                : riggedInFile
+                  ? 'click a part to select · drag to orbit · wheel to zoom'
+                  : 'click a part to select · drag to orbit · rig the model to pose it'
           }
         />
       </div>
