@@ -40,9 +40,16 @@ function mapStatus(t: MeshyTask): TaskStatus {
   }
 }
 
-/** Meshy keeps text and image tasks on different paths; remember which. */
+/**
+ * Meshy serves text and image tasks from different paths, so the id we hand
+ * back carries an `img:` marker. It survives a restart, which is what lets a
+ * paid job be resumed later. Anything talking to Meshy about the task itself —
+ * rigging, for one — needs the bare id.
+ */
 const kindOf = (taskId: string) => (taskId.startsWith('img:') ? 'image' : 'text');
-const rawId = (taskId: string) => taskId.replace(/^img:/, '');
+
+export const meshyRawTaskId = (taskId: string) => taskId.replace(/^img:/, '');
+const rawId = meshyRawTaskId;
 
 export const meshy: GenerationProvider = {
   id: 'meshy',

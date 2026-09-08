@@ -16,6 +16,7 @@ import {
   loadPendingTasks,
   savePendingTasks,
   listActions,
+  meshyRawTaskId,
   rigModel,
   runGeneration,
   saveProvider,
@@ -577,7 +578,8 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
         setJob({ running: true, label: 'Preparing to rig', percent: 0, phase: 'submitting', error: null });
         const { riggedTaskId, blob } = await rigModel({
           apiKey: key,
-          inputTaskId: version.taskId,
+          // Strip the `img:` marker: Meshy's rigging endpoint wants the bare id.
+          inputTaskId: meshyRawTaskId(version.taskId),
           characterHeight: version.stats.sizeMeters || 1.7,
           signal: controller.signal,
           onProgress: (p) =>
