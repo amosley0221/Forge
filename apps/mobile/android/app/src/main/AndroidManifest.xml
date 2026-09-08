@@ -47,6 +47,15 @@
     -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+      Saving an export into the public Downloads folder. Android 10+ goes
+      through MediaStore and needs no permission, so this is scoped to older
+      releases only.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <!-- Camera capture is optional: the phone without one still syncs and reviews. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 

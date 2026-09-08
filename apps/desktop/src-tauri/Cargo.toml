@@ -18,6 +18,9 @@ tauri-plugin-http = "2"
 # In-app updates: download and install a newer build over this one.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Save dialogs and "show in folder", so exported models are easy to find.
+tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

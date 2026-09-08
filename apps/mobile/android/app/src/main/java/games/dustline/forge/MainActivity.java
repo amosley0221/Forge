@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // Local plugins are registered before the bridge starts.
         registerPlugin(ForgeUpdaterPlugin.class);
+        registerPlugin(ForgeFilesPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

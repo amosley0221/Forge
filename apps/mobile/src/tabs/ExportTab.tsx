@@ -5,6 +5,7 @@ import { COLORS, ENGINES, formatBytes, formatSize, formatTris, readBlob } from '
 import { mono } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 import { modelFileUri } from '../storage.js';
+import { canSaveToDownloads, saveModelToDownloads } from '../files.js';
 
 const A = COLORS.accent;
 
@@ -17,6 +18,7 @@ export function ExportTab({ s }: { s: MobileSession }) {
   const a = s.active;
   const v = s.version;
   const [busy, setBusy] = useState(false);
+  const [savedTo, setSavedTo] = useState<string | null>(null);
   if (!a || !v) return null;
 
   const engine = ENGINES[s.engineIdx];
@@ -51,6 +53,23 @@ export function ExportTab({ s }: { s: MobileSession }) {
       }
     } catch (e) {
       s.say(e instanceof Error ? e.message : 'Could not share the model');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveToDownloads = async () => {
+    if (!v.fileId) {
+      s.say('This version has no model file on this device.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await saveModelToDownloads(v.fileId, `${a.name}_${v.label}.glb`);
+      setSavedTo(`Downloads/${a.name}_${v.label}.glb`);
+      s.say('Saved to your Downloads folder');
+    } catch (e) {
+      s.say(e instanceof Error ? e.message : 'Could not save the model');
     } finally {
       setBusy(false);
     }
@@ -147,6 +166,44 @@ export function ExportTab({ s }: { s: MobileSession }) {
       >
         {busy ? 'Preparing…' : `Share ${a.name}_${v.label}.glb`}
       </button>
+
+      {canSaveToDownloads() && (
+        <button
+          type="button"
+          onClick={() => void saveToDownloads()}
+          disabled={busy || !v.fileId}
+          style={{
+            width: '100%',
+            marginTop: 9,
+            padding: '12px 0',
+            borderRadius: 8,
+            border: `1px solid ${COLORS.inputBorder}`,
+            background: 'transparent',
+            color: COLORS.text2,
+            fontSize: 13,
+            cursor: 'pointer',
+          }}
+        >
+          Save to Downloads
+        </button>
+      )}
+
+      {savedTo && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: 10,
+            borderRadius: 8,
+            background: COLORS.okTint,
+            border: '1px solid rgba(52,199,123,.3)',
+            fontSize: 11,
+            color: COLORS.ok,
+          }}
+        >
+          Saved as <span style={{ fontFamily: mono }}>{savedTo}</span> — it will show up in Chrome's
+          downloads and the Files app.
+        </div>
+      )}
 
       <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, marginTop: 12 }}>
         {v.stats.bytes ? `${formatBytes(v.stats.bytes)} on disk` : 'Size unknown'}

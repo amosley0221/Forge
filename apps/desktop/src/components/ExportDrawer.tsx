@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { COLORS, ENGINES, formatBytes, formatSize, formatTris, readBlob } from '@forge/core';
 import { Chip, SectionLabel, mono } from '@forge/ui';
 import type { Session } from '../session.js';
+import { canRevealFiles, saveModel, showInFolder } from '../files.js';
 
 const A = COLORS.accent;
 
@@ -16,13 +17,14 @@ export function ExportDrawer({ s }: { s: Session }) {
     Math.max(0, ENGINES.findIndex((e) => e.name === s.settings.engine)),
   );
   const [busy, setBusy] = useState(false);
+  const [savedTo, setSavedTo] = useState<string | null>(null);
   if (!a || !v) return null;
 
   const engine = ENGINES[engineIdx];
   const approved = a.clips.filter((c) => c.status === 'approved').map((c) => c.name);
   const unreviewed = a.clips.filter((c) => c.status !== 'approved').length;
 
-  const save = async () => {
+  const exportModel = async () => {
     if (!v.fileId) {
       s.say('This version has no model file cached on this computer.');
       return;
@@ -31,14 +33,11 @@ export function ExportDrawer({ s }: { s: Session }) {
     try {
       const blob = await readBlob(s.blobs, v.fileId);
       if (!blob) throw new Error('Could not read the model file');
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${a.name}_${v.label}.glb`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      s.setExportOpen(false);
-      s.say(`Saved ${a.name}_${v.label}.glb`);
+      const { path } = await saveModel(blob, `${a.name}_${v.label}.glb`);
+      if (path) {
+        setSavedTo(path);
+        s.say(`Saved to ${path}`);
+      }
     } catch (e) {
       s.say(e instanceof Error ? e.message : 'Could not export the model');
     } finally {
@@ -137,7 +136,7 @@ export function ExportDrawer({ s }: { s: Session }) {
 
         <button
           type="button"
-          onClick={() => void save()}
+          onClick={() => void exportModel()}
           disabled={busy || !v.fileId}
           style={{
             width: '100%',
@@ -152,8 +151,51 @@ export function ExportDrawer({ s }: { s: Session }) {
             cursor: 'pointer',
           }}
         >
-          {busy ? 'Preparing…' : `Save ${a.name}_${v.label}.glb`}
+          {busy ? 'Preparing…' : `Save ${a.name}_${v.label}.glb…`}
         </button>
+
+        {savedTo && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: 10,
+              borderRadius: 8,
+              background: COLORS.okTint,
+              border: '1px solid rgba(52,199,123,.3)',
+            }}
+          >
+            <div style={{ fontSize: 11, color: COLORS.ok }}>Saved</div>
+            <div
+              style={{
+                fontFamily: mono,
+                fontSize: 10,
+                color: COLORS.text2,
+                margin: '4px 0 0',
+                wordBreak: 'break-all',
+              }}
+            >
+              {savedTo}
+            </div>
+            {canRevealFiles() && (
+              <button
+                type="button"
+                onClick={() => void showInFolder(savedTo)}
+                style={{
+                  marginTop: 8,
+                  padding: '6px 11px',
+                  borderRadius: 6,
+                  border: `1px solid ${COLORS.inputBorder}`,
+                  background: 'transparent',
+                  color: COLORS.text2,
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
+              >
+                Show in folder
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </>
   );
