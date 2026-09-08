@@ -18,13 +18,28 @@ export function UpdateBanner({ say }: { say: (t: string) => void }) {
   const [percent, setPercent] = useState(0);
   const [dismissed, setDismissed] = useState(false);
 
+  /**
+   * Checking only at launch means a release published while Forge is open goes
+   * unnoticed until the next restart. Re-check when the window regains focus
+   * and every half hour, so a running app finds out on its own.
+   */
   useEffect(() => {
     let alive = true;
-    void checkForUpdate().then((s) => {
-      if (alive) setStatus(s);
-    });
+    const run = () => {
+      void checkForUpdate().then((s) => {
+        if (alive) setStatus(s);
+      });
+    };
+
+    run();
+    const timer = setInterval(run, 30 * 60 * 1000);
+    const onFocus = () => run();
+    if (typeof window !== 'undefined') window.addEventListener('focus', onFocus);
+
     return () => {
       alive = false;
+      clearInterval(timer);
+      if (typeof window !== 'undefined') window.removeEventListener('focus', onFocus);
     };
   }, []);
 

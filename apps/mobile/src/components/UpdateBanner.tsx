@@ -18,13 +18,32 @@ export function UpdateBanner({ say }: { say: (t: string) => void }) {
   const [percent, setPercent] = useState(0);
   const [dismissed, setDismissed] = useState(false);
 
+  /**
+   * Also re-check when the app comes back to the foreground, so a release
+   * published while it sat in the background is noticed on return rather than
+   * only after a cold start.
+   */
   useEffect(() => {
     let alive = true;
-    void checkForUpdate().then((s) => {
-      if (alive) setStatus(s);
-    });
+    const run = () => {
+      void checkForUpdate().then((s) => {
+        if (alive) setStatus(s);
+      });
+    };
+
+    run();
+    const timer = setInterval(run, 30 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+
     return () => {
       alive = false;
+      clearInterval(timer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisible);
+      }
     };
   }, []);
 
