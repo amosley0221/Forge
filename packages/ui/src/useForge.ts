@@ -301,6 +301,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
         const { manifest, sha } = await fetchLibrary(cfg);
         const remoteAssets = manifest?.assets ?? [];
         const merged = mergeLibraries(assetsRef.current, remoteAssets);
+        const knownFiles = new Set(manifest?.files ?? []);
 
         // Fetch any model this device is missing.
         for (const asset of merged) {
@@ -308,20 +309,28 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
             if (!v.fileId) continue;
             if (await blobs.url(v.fileId)) continue;
             const blob = await downloadModel(cfg, v.fileId);
-            if (blob) await blobs.put(v.fileId, blob);
+            if (blob) {
+              await blobs.put(v.fileId, blob);
+              knownFiles.add(v.fileId);
+            }
           }
         }
 
-        // Upload any model the repo is missing.
+        // Upload any model the repo is missing. The manifest lists what is
+        // already there, so a settled library uploads nothing and asks nothing.
         for (const asset of merged) {
           for (const v of asset.versions) {
-            if (!v.fileId) continue;
+            if (!v.fileId || knownFiles.has(v.fileId)) continue;
             const blob = await readBlob(blobs, v.fileId);
-            if (blob) await uploadModel(cfg, v.fileId, blob);
+            if (!blob) continue;
+            await uploadModel(cfg, v.fileId, blob);
+            knownFiles.add(v.fileId);
           }
         }
 
+        const filesChanged = knownFiles.size !== (manifest?.files?.length ?? -1);
         const changed =
+          filesChanged ||
           merged.length !== remoteAssets.length ||
           merged.some((a) => {
             const r = remoteAssets.find((x) => x.id === a.id);
@@ -331,7 +340,13 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
         if (changed) {
           await pushLibrary(
             cfg,
-            { version: 1, updatedAt: Date.now(), device, assets: merged },
+            {
+              version: 1,
+              updatedAt: Date.now(),
+              device,
+              assets: merged,
+              files: [...knownFiles],
+            },
             sha,
           );
         }

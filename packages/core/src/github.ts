@@ -28,6 +28,12 @@ export interface LibraryManifest {
   /** Which device wrote this revision, for the "updated from…" message. */
   device: string;
   assets: Asset[];
+  /**
+   * Model files known to be in the repo. Without this the client would have to
+   * ask GitHub whether each model exists on every sync — one API call per model
+   * per launch, which is both slow and a needless drain on the rate limit.
+   */
+  files?: string[];
 }
 
 export class GitHubError extends Error {
@@ -209,10 +215,13 @@ export async function uploadModel(
   cfg: GitHubConfig,
   fileId: string,
   blob: Blob,
+  opts: { known?: boolean } = {},
 ): Promise<void> {
+  // Model files are immutable: the id is assigned once and the bytes never
+  // change, so a file the manifest already lists needs no check and no write.
+  if (opts.known) return;
   const path = modelPath(fileId);
-  const existing = await getMeta(cfg, path);
-  if (existing) return; // model files are immutable — same id, same bytes
+  if (await getMeta(cfg, path)) return;
   await putFile(cfg, path, await encodeBase64(blob), `Forge model ${fileId}`);
 }
 
