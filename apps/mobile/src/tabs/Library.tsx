@@ -58,7 +58,7 @@ export function Library({ s }: { s: MobileSession }) {
         </button>
       </div>
 
-      <UpdateBanner say={s.say} />
+      <UpdateBanner say={s.say} busyWithJob={s.job.running} />
 
       {s.job.error && (
         <div style={{ marginBottom: 12 }}>

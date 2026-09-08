@@ -54,6 +54,10 @@ export function SettingsSheet({ s }: { s: MobileSession }) {
   };
 
   const doUpdate = async () => {
+    if (s.job.running) {
+      setUpdateNote('A job is running — let it finish first.');
+      return;
+    }
     const status = await checkForUpdate();
     if (!status.latest || !status.updateAvailable) {
       setUpdateNote('You are on the newest release');

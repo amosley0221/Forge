@@ -12,7 +12,14 @@ const A = COLORS.accent;
  * applicationId, Android treats it as an update — no uninstall, and the
  * project data in app storage survives.
  */
-export function UpdateBanner({ say }: { say: (t: string) => void }) {
+export function UpdateBanner({
+  say,
+  busyWithJob,
+}: {
+  say: (t: string) => void;
+  /** A generation in flight; downloading over it would interrupt the job. */
+  busyWithJob?: boolean;
+}) {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [percent, setPercent] = useState(0);
@@ -113,19 +120,20 @@ export function UpdateBanner({ say }: { say: (t: string) => void }) {
           <button
             type="button"
             onClick={() => void install()}
+            disabled={busyWithJob}
             style={{
               flex: 1,
               padding: '10px 0',
               borderRadius: 8,
-              border: 'none',
-              background: A,
-              color: COLORS.ink,
+              border: busyWithJob ? `1px solid ${COLORS.inputBorder}` : 'none',
+              background: busyWithJob ? 'transparent' : A,
+              color: busyWithJob ? COLORS.muted : COLORS.ink,
               fontWeight: 600,
               fontSize: 12,
-              cursor: 'pointer',
+              cursor: busyWithJob ? 'not-allowed' : 'pointer',
             }}
           >
-            Update
+            {busyWithJob ? 'Job running' : 'Update'}
           </button>
           <button
             type="button"

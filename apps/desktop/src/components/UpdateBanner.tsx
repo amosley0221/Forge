@@ -12,7 +12,14 @@ const A = COLORS.accent;
  * version — nothing is uninstalled, so the project and the provider key stay
  * where they are.
  */
-export function UpdateBanner({ say }: { say: (t: string) => void }) {
+export function UpdateBanner({
+  say,
+  busyWithJob,
+}: {
+  say: (t: string) => void;
+  /** A generation in flight; restarting would interrupt it. */
+  busyWithJob?: boolean;
+}) {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [percent, setPercent] = useState(0);
@@ -106,15 +113,17 @@ export function UpdateBanner({ say }: { say: (t: string) => void }) {
           <button
             type="button"
             onClick={() => void install()}
+            disabled={busyWithJob}
+            title={busyWithJob ? 'A job is running — let it finish first' : undefined}
             style={{
               padding: '8px 16px',
               borderRadius: 6,
-              border: 'none',
-              background: A,
-              color: COLORS.ink,
+              border: busyWithJob ? `1px solid ${COLORS.inputBorder}` : 'none',
+              background: busyWithJob ? 'transparent' : A,
+              color: busyWithJob ? COLORS.muted : COLORS.ink,
               fontWeight: 600,
               fontSize: 12,
-              cursor: 'pointer',
+              cursor: busyWithJob ? 'not-allowed' : 'pointer',
             }}
           >
             Update and restart
@@ -136,7 +145,7 @@ export function UpdateBanner({ say }: { say: (t: string) => void }) {
           </button>
           <div style={{ flex: 1 }} />
           <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted, alignSelf: 'center' }}>
-            installs over this copy
+            {busyWithJob ? 'waiting for the current job' : 'installs over this copy'}
           </span>
         </div>
       )}

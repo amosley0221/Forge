@@ -55,7 +55,7 @@ export function Start({ s }: { s: Session }) {
           </p>
         </div>
 
-        <UpdateBanner say={s.say} />
+        <UpdateBanner say={s.say} busyWithJob={s.job.running} />
 
         {s.job.error && (
           <ErrorPanel

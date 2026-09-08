@@ -6,6 +6,7 @@ import type { Session } from '../session.js';
 import { secretsAreSecure } from '../storage.js';
 import { APP_VERSION } from '../version.js';
 import { RELEASES_PAGE, checkForUpdate, installUpdate } from '../updater.js';
+import type { Update } from '@tauri-apps/plugin-updater';
 
 const A = COLORS.accent;
 
@@ -36,6 +37,7 @@ export function Settings({ s }: { s: Session }) {
   const [name, setName] = useState(s.settings.projectName);
   const [updateNote, setUpdateNote] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
 
   const cachedFiles = s.assets.reduce((n, a) => n + a.versions.filter((v) => v.fileId).length, 0);
   const cachedBytes = s.assets.reduce(
@@ -270,6 +272,7 @@ export function Settings({ s }: { s: Session }) {
             disabled={updating}
             onClick={async () => {
               setUpdateNote('Checking…');
+              setPendingUpdate(null);
               const status = await checkForUpdate();
               if (!status.supported) {
                 setUpdateNote('Updates are available in the installed desktop app.');
@@ -283,21 +286,49 @@ export function Settings({ s }: { s: Session }) {
                 setUpdateNote('You are on the newest release.');
                 return;
               }
-              setUpdating(true);
-              setUpdateNote(`Installing ${status.version}…`);
-              try {
-                await installUpdate(status.update, (p) =>
-                  setUpdateNote(`Downloading ${status.version}… ${p}%`),
-                );
-              } catch (e) {
-                setUpdateNote(e instanceof Error ? e.message : 'Update failed');
-                setUpdating(false);
-              }
+              // Checking must never install on its own: restarting would throw
+              // away whatever the user is in the middle of.
+              setPendingUpdate(status.update);
+              setUpdateNote(`Forge ${status.version} is available.`);
             }}
             style={outline}
           >
-            {updating ? 'Updating…' : 'Check for updates'}
+            Check for updates
           </button>
+
+          {pendingUpdate && (
+            <>
+              <button
+                type="button"
+                disabled={updating || s.job.running}
+                onClick={async () => {
+                  setUpdating(true);
+                  try {
+                    await installUpdate(pendingUpdate, (p) =>
+                      setUpdateNote(`Downloading… ${p}%`),
+                    );
+                  } catch (e) {
+                    setUpdateNote(e instanceof Error ? e.message : 'Update failed');
+                    setUpdating(false);
+                  }
+                }}
+                style={{
+                  ...outline,
+                  background: s.job.running ? 'transparent' : A,
+                  color: s.job.running ? COLORS.muted : COLORS.ink,
+                  border: s.job.running ? `1px solid ${COLORS.inputBorder}` : 'none',
+                  fontWeight: 600,
+                }}
+              >
+                {updating ? 'Installing…' : 'Install and restart'}
+              </button>
+              <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '8px 0 0' }}>
+                {s.job.running
+                  ? 'A job is running — let it finish first, or the model you are paying for is interrupted.'
+                  : 'Forge closes and reopens on the new version. Your library, settings and provider key are saved as you go, so nothing is lost.'}
+              </p>
+            </>
+          )}
           <a
             href={RELEASES_PAGE}
             target="_blank"
