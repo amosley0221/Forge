@@ -23,6 +23,11 @@ export interface ProjectSettings {
   triBudget: number;
   creatureTriBudget: number;
   textureSize: number;
+  /**
+   * Run the provider's texture stage after the mesh. Off gives bare grey
+   * geometry — no face, no clothing colour — and costs one task instead of two.
+   */
+  textured: boolean;
   autoClips: boolean;
   lodLevels: number;
   guide: boolean;
@@ -35,6 +40,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   triBudget: 20000,
   creatureTriBudget: 8000,
   textureSize: 2048,
+  textured: true,
   autoClips: true,
   lodLevels: 4,
   guide: true,

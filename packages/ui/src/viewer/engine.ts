@@ -19,6 +19,11 @@ export interface ViewerOptions {
   clip: string | null;
   speed: number;
   compact?: boolean;
+  /**
+   * Drag a limb to bend it instead of orbiting the camera. Needs a rigged
+   * model — without a skeleton there is nothing to bend.
+   */
+  pose?: boolean;
 }
 
 const DEFAULTS: ViewerOptions = {
@@ -29,10 +34,15 @@ const DEFAULTS: ViewerOptions = {
   clip: null,
   speed: 1,
   compact: false,
+  pose: false,
 };
 
 export interface ViewerCallbacks {
   onPick(part: string | null): void;
+  /** Whether the loaded file has a skeleton, i.e. whether posing is possible. */
+  onSkeleton?(rigged: boolean): void;
+  /** The bone currently being dragged, for a label in the UI. */
+  onPoseBone?(name: string | null): void;
   onLoaded(stats: MeshStats): void;
   onError(message: string): void;
   onLoadingChange(loading: boolean): void;
@@ -97,6 +107,18 @@ export class ViewerEngine {
   private highlighted: { mat: THREE.MeshStandardMaterial; emissive: THREE.Color; intensity: number }[] = [];
   private loadToken = 0;
   private disposed = false;
+  private skinned: THREE.SkinnedMesh[] = [];
+  /** Every bone's transform as the file authored it, so a pose can be undone. */
+  private restPose: { bone: THREE.Bone; quaternion: THREE.Quaternion }[] = [];
+  private drag: {
+    /** The joint being rotated — the parent of the bone that was grabbed. */
+    pivot: THREE.Object3D;
+    pivotWorld: THREE.Vector3;
+    /** Direction from the joint to the grab point when the drag started. */
+    fromDir: THREE.Vector3;
+    startWorldQuat: THREE.Quaternion;
+    plane: THREE.Plane;
+  } | null = null;
 
   constructor(
     private host: HTMLElement,
@@ -146,6 +168,15 @@ export class ViewerEngine {
     if (prev.wire !== this.opts.wire) this.applyWireframe();
     if (prev.selected !== this.opts.selected) this.applyHighlight();
     if (prev.clip !== this.opts.clip) this.playClip(this.opts.clip);
+    if (prev.pose !== this.opts.pose) {
+      // A playing clip writes over every bone each frame, so posing and
+      // playback cannot both be on. Leaving pose mode restores the clip.
+      if (this.opts.pose) this.playClip(null);
+      else if (this.opts.clip) this.playClip(this.opts.clip);
+      this.drag = null;
+      this.cb.onPoseBone?.(null);
+      this.renderer.domElement.style.cursor = this.opts.pose ? 'crosshair' : 'grab';
+    }
     if (this.action) this.action.timeScale = this.opts.speed;
   }
 
@@ -181,12 +212,22 @@ export class ViewerEngine {
 
     el.addEventListener('pointerdown', (e) => {
       points.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      start = { x: e.clientX, y: e.clientY, rx: this.rot.x, ry: this.rot.y };
-      moved = 0;
       el.setPointerCapture(e.pointerId);
+      moved = 0;
+      // In pose mode a press that lands on the model grabs a limb; a press on
+      // empty space still orbits, so the camera is never locked away.
+      if (this.opts.pose && points.size === 1 && this.beginPose(e)) {
+        start = null;
+        return;
+      }
+      start = { x: e.clientX, y: e.clientY, rx: this.rot.x, ry: this.rot.y };
     });
     el.addEventListener('pointermove', (e) => {
       if (points.has(e.pointerId)) points.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.drag) {
+        this.dragPose(e);
+        return;
+      }
       if (points.size === 2) {
         // Pinch to zoom on touch.
         const [a, b] = [...points.values()];
@@ -205,7 +246,13 @@ export class ViewerEngine {
       this.idle = 0;
     });
     const end = (e: PointerEvent) => {
-      if (start && moved < 6) this.pick(e);
+      if (this.drag) {
+        this.drag = null;
+        this.cb.onPoseBone?.(null);
+        this.applyWireframe();
+      } else if (start && moved < 6) {
+        this.pick(e);
+      }
       points.delete(e.pointerId);
       if (points.size < 2) pinch = 0;
       start = null;
@@ -215,6 +262,8 @@ export class ViewerEngine {
       points.delete(e.pointerId);
       pinch = 0;
       start = null;
+      this.drag = null;
+      this.cb.onPoseBone?.(null);
       void e;
     });
     el.addEventListener(
@@ -239,12 +288,134 @@ export class ViewerEngine {
     this.cb.onPick(hit ? hit.object.name || hit.object.uuid.slice(0, 8) : null);
   }
 
+  /**
+   * Which bone the user actually grabbed.
+   *
+   * A skinned vertex is influenced by up to four bones, so the one that owns
+   * the click is the one with the largest weight at the nearest vertex of the
+   * hit triangle. Grabbing the hand therefore reports the hand bone.
+   */
+  private boneAt(hit: THREE.Intersection): THREE.Bone | null {
+    const mesh = hit.object as THREE.SkinnedMesh;
+    if (!mesh.isSkinnedMesh || !hit.face || !mesh.skeleton) return null;
+
+    const skinIndex = mesh.geometry.attributes.skinIndex;
+    const skinWeight = mesh.geometry.attributes.skinWeight;
+    if (!skinIndex || !skinWeight) return null;
+
+    let bestBone: THREE.Bone | null = null;
+    let bestWeight = 0;
+    for (const vertex of [hit.face.a, hit.face.b, hit.face.c]) {
+      for (const slot of ['x', 'y', 'z', 'w'] as const) {
+        const weight = skinWeight[`get${slot.toUpperCase()}` as 'getX'](vertex);
+        if (weight <= bestWeight) continue;
+        const bone = mesh.skeleton.bones[skinIndex[`get${slot.toUpperCase()}` as 'getX'](vertex)];
+        if (!bone) continue;
+        bestWeight = weight;
+        bestBone = bone;
+      }
+    }
+    return bestBone;
+  }
+
+  /**
+   * Start a pose drag. Returns false when the press missed the model, which
+   * lets the same gesture fall through to orbiting.
+   */
+  private beginPose(e: PointerEvent): boolean {
+    if (!this.model || !this.skinned.length) return false;
+
+    const b = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(
+      ((e.clientX - b.left) / b.width) * 2 - 1,
+      -((e.clientY - b.top) / b.height) * 2 + 1,
+    );
+    this.ray.setFromCamera(this.pointer, this.cam);
+    const hit = this.ray.intersectObjects(this.skinned, true)[0];
+    if (!hit) return false;
+
+    const grabbed = this.boneAt(hit);
+    if (!grabbed) return false;
+
+    // Rotate the joint above what was grabbed: pulling a hand should bend the
+    // elbow, not spin the wrist in place. A root bone has nothing above it, so
+    // it rotates itself.
+    const parent = grabbed.parent;
+    const pivot = parent && (parent as THREE.Bone).isBone ? parent : grabbed;
+
+    const pivotWorld = pivot.getWorldPosition(new THREE.Vector3());
+    const fromDir = hit.point.clone().sub(pivotWorld);
+    if (fromDir.lengthSq() < 1e-8) return false;
+
+    const normal = this.cam.getWorldDirection(new THREE.Vector3());
+    this.drag = {
+      pivot,
+      pivotWorld,
+      fromDir: fromDir.normalize(),
+      startWorldQuat: pivot.getWorldQuaternion(new THREE.Quaternion()),
+      plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, hit.point),
+    };
+    this.cb.onPoseBone?.(grabbed.name || 'limb');
+    return true;
+  }
+
+  /** Swing the grabbed joint so the limb follows the pointer. */
+  private dragPose(e: PointerEvent) {
+    const drag = this.drag;
+    if (!drag) return;
+
+    const b = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(
+      ((e.clientX - b.left) / b.width) * 2 - 1,
+      -((e.clientY - b.top) / b.height) * 2 + 1,
+    );
+    this.ray.setFromCamera(this.pointer, this.cam);
+
+    // Drag across the plane facing the camera through the grab point, so the
+    // limb tracks the cursor rather than swinging off into depth.
+    const target = new THREE.Vector3();
+    if (!this.ray.ray.intersectPlane(drag.plane, target)) return;
+
+    const toDir = target.sub(drag.pivotWorld);
+    if (toDir.lengthSq() < 1e-8) return;
+    toDir.normalize();
+
+    // The rotation that takes the limb's original direction to the new one,
+    // expressed in world space and then brought back into the joint's parent.
+    const swing = new THREE.Quaternion().setFromUnitVectors(drag.fromDir, toDir);
+    const world = swing.multiply(drag.startWorldQuat);
+
+    const parentWorld = drag.pivot.parent
+      ? drag.pivot.parent.getWorldQuaternion(new THREE.Quaternion())
+      : new THREE.Quaternion();
+    drag.pivot.quaternion.copy(parentWorld.invert().multiply(world));
+    drag.pivot.updateMatrixWorld(true);
+    this.idle = 0;
+  }
+
+  /** Put every bone back where the file had it. */
+  resetPose() {
+    this.restPose.forEach(({ bone, quaternion }) => bone.quaternion.copy(quaternion));
+    this.model?.updateMatrixWorld(true);
+    this.drag = null;
+    this.cb.onPoseBone?.(null);
+    this.applyWireframe();
+  }
+
+  /** Whether the loaded file can be posed at all. */
+  get rigged(): boolean {
+    return this.skinned.length > 0;
+  }
+
   private clearModel() {
     this.action?.stop();
     this.action = null;
     this.mixer = null;
     this.clips = [];
     this.highlighted = [];
+    this.skinned = [];
+    this.restPose = [];
+    this.drag = null;
     if (this.wireOverlay) {
       this.root.remove(this.wireOverlay);
       this.wireOverlay = null;
@@ -288,6 +459,17 @@ export class ViewerEngine {
       if (mesh.isMesh) mesh.castShadow = mesh.receiveShadow = true;
     });
     this.root.add(this.model);
+
+    this.skinned = [];
+    const bones = new Set<THREE.Bone>();
+    this.model.traverse((obj) => {
+      const skin = obj as THREE.SkinnedMesh;
+      if (!skin.isSkinnedMesh || !skin.skeleton) return;
+      this.skinned.push(skin);
+      skin.skeleton.bones.forEach((bone) => bones.add(bone));
+    });
+    this.restPose = [...bones].map((bone) => ({ bone, quaternion: bone.quaternion.clone() }));
+    this.cb.onSkeleton?.(this.skinned.length > 0);
 
     this.clips = gltf.animations ?? [];
     if (this.clips.length) this.mixer = new THREE.AnimationMixer(this.model);

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { COLORS, ago, formatBytes, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
-import { ForgeViewer, Panel, SectionLabel, StatusTag, mono } from '@forge/ui';
+import { Appearance, ForgeViewer, Panel, SectionLabel, StatusTag, mono } from '@forge/ui';
+import type { ViewerEngine } from '@forge/ui';
 import type { Session } from '../session.js';
 
 const A = COLORS.accent;
@@ -54,6 +55,10 @@ export function Editor({ s }: { s: Session }) {
   const [picking, setPicking] = useState(false);
 
   const rigged = a ? [...a.versions].reverse().find((x) => x.riggedTaskId) : undefined;
+  const viewer = useRef<ViewerEngine | null>(null);
+  const [pose, setPose] = useState(false);
+  const [riggedInFile, setRiggedInFile] = useState(false);
+  const [held, setHeld] = useState<string | null>(null);
 
   useEffect(() => {
     if (!picking || actions) return;
@@ -68,11 +73,18 @@ export function Editor({ s }: { s: Session }) {
         url={s.modelUrl}
         wire={s.wire}
         selected={s.selected}
-        autorotate={s.turntable && !s.clip}
+        autorotate={s.turntable && !s.clip && !pose}
         clip={s.clip}
         speed={s.speed}
+        pose={pose}
+        engineRef={viewer}
         emptyMessage="This version’s model file is not on this computer. Sync to download it."
         onPick={(part) => s.setSelected(part)}
+        onSkeleton={(hasBones) => {
+          setRiggedInFile(hasBones);
+          if (!hasBones) setPose(false);
+        }}
+        onPoseBone={setHeld}
         style={{ position: 'absolute', inset: 0 }}
       />
 
@@ -89,11 +101,21 @@ export function Editor({ s }: { s: Session }) {
       >
         <HudPill label={s.wire ? 'Shaded + wire' : 'Shaded'} on={s.wire} onClick={() => s.setWire(!s.wire)} />
         <HudPill label="Turntable" on={s.turntable} onClick={() => s.setTurntable(!s.turntable)} />
+        {riggedInFile && (
+          <HudPill label="Pose" on={pose} onClick={() => setPose(!pose)} />
+        )}
+        {pose && (
+          <HudPill label="Reset pose" onClick={() => viewer.current?.resetPose()} />
+        )}
         <HudPill
           label={
-            s.selected
-              ? `${s.selected} selected`
-              : 'click a part to select · drag to orbit · wheel to zoom'
+            pose
+              ? held
+                ? `holding ${held}`
+                : 'drag a limb to bend it · drag the background to orbit'
+              : s.selected
+                ? `${s.selected} selected`
+                : 'click a part to select · drag to orbit · wheel to zoom'
           }
         />
       </div>
@@ -257,6 +279,16 @@ export function Editor({ s }: { s: Session }) {
               Add a motion clip
             </button>
           )}
+        </Panel>
+
+        <Panel style={{ padding: 12 }}>
+          <SectionLabel style={{ marginBottom: 8 }}>Appearance</SectionLabel>
+          <Appearance
+            asset={a}
+            canRestyle={v.provider === 'meshy' && Boolean(v.taskId)}
+            busy={s.job.running}
+            onRestyle={(description) => void s.restyle(a, description)}
+          />
         </Panel>
       </div>
 

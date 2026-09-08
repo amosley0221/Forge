@@ -247,6 +247,40 @@ export function SettingsSheet({ s }: { s: MobileSession }) {
           produces — the real count is shown on each asset.
         </p>
 
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 0',
+            marginTop: 6,
+            fontSize: 13,
+            borderTop: `1px solid ${COLORS.hairline}`,
+          }}
+        >
+          <span style={{ color: COLORS.muted }}>Texture new models</span>
+          <button
+            type="button"
+            onClick={() => s.updateSettings({ textured: !s.settings.textured })}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: A,
+              fontFamily: mono,
+              fontSize: 13,
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            {s.settings.textured ? 'on' : 'off'}
+          </button>
+        </div>
+        <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '4px 0 0' }}>
+          Meshy builds the shape and the texture as two separately-charged jobs. With this off you
+          get bare grey geometry — no face, no clothing colour — for half the credits.
+        </p>
+
         <Section title="Recent jobs on your provider" />
         <ProviderJobs
           enabled={s.canListJobs}

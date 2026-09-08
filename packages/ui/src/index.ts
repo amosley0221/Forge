@@ -2,6 +2,8 @@ export * from './components.js';
 export * from './useForge.js';
 export { SyncSettings } from './SyncSettings.js';
 export { ProviderJobs } from './ProviderJobs.js';
+export { Appearance } from './Appearance.js';
+export type { AppearanceProps } from './Appearance.js';
 export type { ProviderJobsProps } from './ProviderJobs.js';
 export type { SyncSettingsProps } from './SyncSettings.js';
 export { ForgeViewer } from './viewer/ForgeViewer.js';

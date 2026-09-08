@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, MutableRefObject } from 'react';
 import { COLORS } from '@forge/core';
 import type { MeshStats } from '@forge/core';
 import { ViewerEngine } from './engine.js';
@@ -14,9 +14,17 @@ export interface ForgeViewerProps {
   clip?: string | null;
   speed?: number;
   compact?: boolean;
+  /** Drag a limb to bend it instead of orbiting. Needs a rigged model. */
+  pose?: boolean;
   emptyMessage?: string;
   onPick?: (part: string | null) => void;
   onLoaded?: (stats: MeshStats) => void;
+  /** Fires on load with whether this file has a skeleton to pose. */
+  onSkeleton?: (rigged: boolean) => void;
+  /** The limb currently being dragged, or null when nothing is held. */
+  onPoseBone?: (name: string | null) => void;
+  /** Handed the engine so the caller can drive it directly, e.g. resetPose(). */
+  engineRef?: MutableRefObject<ViewerEngine | null>;
   style?: CSSProperties;
   className?: string;
 }
@@ -33,16 +41,20 @@ export function ForgeViewer({
   clip = null,
   speed = 1,
   compact = false,
+  pose = false,
   emptyMessage = 'No model loaded',
   onPick,
   onLoaded,
+  onSkeleton,
+  onPoseBone,
+  engineRef,
   style,
   className,
 }: ForgeViewerProps) {
   const host = useRef<HTMLDivElement | null>(null);
   const engine = useRef<ViewerEngine | null>(null);
-  const callbacks = useRef({ onPick, onLoaded });
-  callbacks.current = { onPick, onLoaded };
+  const callbacks = useRef({ onPick, onLoaded, onSkeleton, onPoseBone });
+  callbacks.current = { onPick, onLoaded, onSkeleton, onPoseBone };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,18 +69,22 @@ export function ForgeViewer({
       },
       onError: (message) => setError(message),
       onLoadingChange: setLoading,
+      onSkeleton: (rigged) => callbacks.current.onSkeleton?.(rigged),
+      onPoseBone: (name) => callbacks.current.onPoseBone?.(name),
     });
     engine.current = e;
+    if (engineRef) engineRef.current = e;
     return () => {
       e.dispose();
       engine.current = null;
+      if (engineRef) engineRef.current = null;
     };
-  }, []);
+  }, [engineRef]);
 
   useEffect(() => {
     setError(null);
-    engine.current?.update({ url, wire, selected, autorotate, clip, speed, compact });
-  }, [url, wire, selected, autorotate, clip, speed, compact]);
+    engine.current?.update({ url, wire, selected, autorotate, clip, speed, compact, pose });
+  }, [url, wire, selected, autorotate, clip, speed, compact, pose]);
 
   return (
     <div

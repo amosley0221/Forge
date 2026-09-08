@@ -223,6 +223,19 @@ export function Settings({ s }: { s: Session }) {
             Sent to the provider as a target polycount. What comes back is whatever it produces —
             the real count is shown on every asset.
           </p>
+          <Row label="Texture new models">
+            <button
+              type="button"
+              onClick={() => s.updateSettings({ textured: !s.settings.textured })}
+              style={{ background: 'none', border: 'none', color: A, fontSize: 11, cursor: 'pointer' }}
+            >
+              {s.settings.textured ? 'on' : 'off'}
+            </button>
+          </Row>
+          <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '6px 0 0' }}>
+            Meshy builds the shape and the texture as two separately-charged jobs. With this off you
+            get bare grey geometry — no face, no clothing colour — for half the credits.
+          </p>
           <Row label="Guide panel">
             <button
               type="button"

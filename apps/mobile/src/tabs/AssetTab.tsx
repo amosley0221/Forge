@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { COLORS, ago, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
-import { ForgeViewer, StatusTag, mono } from '@forge/ui';
+import { Appearance, ForgeViewer, StatusTag, mono } from '@forge/ui';
+import type { ViewerEngine } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 
 const A = COLORS.accent;
 
 export function AssetTab({ s }: { s: MobileSession }) {
+  const viewer = useRef<ViewerEngine | null>(null);
+  const [pose, setPose] = useState(false);
+  const [riggedInFile, setRiggedInFile] = useState(false);
+  const [held, setHeld] = useState<string | null>(null);
   const a = s.active;
   const v = s.version;
   const [actions, setActions] = useState<MeshyAction[] | null>(null);
@@ -58,11 +63,31 @@ export function AssetTab({ s }: { s: MobileSession }) {
             url={s.modelUrl}
             clip={s.clip}
             selected={s.selected}
-            autorotate={!s.clip}
+            autorotate={!s.clip && !pose}
             compact
+            pose={pose}
+            engineRef={viewer}
             emptyMessage="This version’s model file is not on this device. Sync to download it."
             onPick={(part) => s.setSelected(part)}
+            onSkeleton={(hasBones) => {
+              setRiggedInFile(hasBones);
+              if (!hasBones) setPose(false);
+            }}
+            onPoseBone={setHeld}
           />
+
+          {riggedInFile && (
+            <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'flex', gap: 6 }}>
+              {pose && (
+                <button type="button" onClick={() => viewer.current?.resetPose()} style={hudBtn(false)}>
+                  Reset
+                </button>
+              )}
+              <button type="button" onClick={() => setPose(!pose)} style={hudBtn(pose)}>
+                {pose ? (held ?? 'Posing') : 'Pose'}
+              </button>
+            </div>
+          )}
           {a.clips.length > 0 && (
             <div
               style={{
@@ -229,6 +254,18 @@ export function AssetTab({ s }: { s: MobileSession }) {
             {s.lastReply}
           </div>
         )}
+
+        {/* Appearance */}
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Appearance</div>
+          <Appearance
+            asset={a}
+            canRestyle={v.provider === 'meshy' && Boolean(v.taskId)}
+            busy={s.job.running}
+            onRestyle={(description) => void s.restyle(a, description)}
+            compact
+          />
+        </div>
 
         {a.versions.length > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '16px 0 0', flexWrap: 'wrap' }}>
@@ -426,3 +463,17 @@ const lightBtn = {
   fontSize: 12,
   cursor: 'pointer',
 } as const;
+
+/** Small overlay control sitting on the viewport. */
+function hudBtn(on: boolean) {
+  return {
+    padding: '7px 12px',
+    borderRadius: 999,
+    border: `1px solid ${on ? A : COLORS.inputBorder}`,
+    background: on ? COLORS.accentTint : 'rgba(13,14,17,.72)',
+    color: on ? A : COLORS.text2,
+    fontFamily: mono,
+    fontSize: 10,
+    cursor: 'pointer',
+  } as const;
+}
