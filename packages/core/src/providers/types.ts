@@ -60,7 +60,11 @@ export interface GenerationProvider {
     /** Shown on the progress bar while it runs. */
     label: string;
     /** Takes the finished mesh task and returns the texture task's id. */
-    start(key: string, meshTaskId: string, opts: { prompt?: string }): Promise<string>;
+    start(
+      key: string,
+      meshTaskId: string,
+      opts: { prompt?: string; resolution?: '2k' | '4k' | '8k' },
+    ): Promise<string>;
   };
 }
 

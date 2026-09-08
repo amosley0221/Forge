@@ -22,7 +22,11 @@ export interface ProjectSettings {
   style: string;
   triBudget: number;
   creatureTriBudget: number;
-  textureSize: number;
+  /**
+   * Base-colour map size asked of the provider. It was declared here but never
+   * sent, so every model came back at whatever the provider defaulted to.
+   */
+  textureSize: 2048 | 4096;
   /**
    * Run the provider's texture stage after the mesh. Off gives bare grey
    * geometry — no face, no clothing colour — and costs one task instead of two.

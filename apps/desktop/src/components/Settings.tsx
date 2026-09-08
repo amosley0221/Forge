@@ -273,6 +273,23 @@ export function Settings({ s }: { s: Session }) {
             Sent to the provider as a target polycount. What comes back is whatever it produces —
             the real count is shown on every asset.
           </p>
+          <Row label="Texture size">
+            <div style={{ display: 'inline-flex', gap: 6 }}>
+              {([2048, 4096] as const).map((px) => (
+                <Chip
+                  key={px}
+                  label={px === 2048 ? '2K' : '4K'}
+                  on={s.settings.textureSize === px}
+                  onClick={() => s.updateSettings({ textureSize: px })}
+                />
+              ))}
+            </div>
+          </Row>
+          <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '6px 0 0' }}>
+            Asked of the provider when it paints the model. 4K is sharper up close and costs the
+            same credits, just more time. Models made before this setting existed were built at the
+            provider's default.
+          </p>
           <Row label="Texture new models">
             <button
               type="button"

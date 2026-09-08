@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createGltfLoader } from './loader.js';
 import type { MeshStats } from '@forge/core';
@@ -107,6 +108,8 @@ export class ViewerEngine {
   private highlighted: { mat: THREE.MeshStandardMaterial; emissive: THREE.Color; intensity: number }[] = [];
   private loadToken = 0;
   private disposed = false;
+  private pmrem: THREE.PMREMGenerator;
+  private envMap: THREE.Texture;
   private skinned: THREE.SkinnedMesh[] = [];
   /** Every bone's transform as the file authored it, so a pose can be undone. */
   private restPose: { bone: THREE.Bone; quaternion: THREE.Quaternion }[] = [];
@@ -128,17 +131,31 @@ export class ViewerEngine {
     this.renderer.setPixelRatio(Math.min(2, globalThis.devicePixelRatio || 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Generated models are PBR (metal/roughness). Lit by direct lights alone
+    // they read as harsh plastic and every normal-map wrinkle turns into hard
+    // ribbing, which is not how the file will look in an engine. Filmic tone
+    // mapping stops highlights clipping to flat white.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     const canvas = this.renderer.domElement;
     canvas.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;cursor:grab';
     host.appendChild(canvas);
 
-    this.scene.add(new THREE.HemisphereLight(0xdfe6f0, 0x1a1410, 1.1));
-    const key = new THREE.DirectionalLight(0xffe8c8, 2.0);
+    // Image-based lighting: a roughness-aware surface needs something to
+    // reflect. Without it metals render black and roughness reads wrong.
+    this.pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.envMap = this.pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environment = this.envMap;
+
+    // Direct lights now shape the model rather than doing all the work, so
+    // they are dialled back to sit alongside the environment.
+    this.scene.add(new THREE.HemisphereLight(0xdfe6f0, 0x1a1410, 0.5));
+    const key = new THREE.DirectionalLight(0xffe8c8, 1.4);
     key.position.set(4, 7, 3);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0x8fb3ff, 0.5);
+    const fill = new THREE.DirectionalLight(0x8fb3ff, 0.35);
     fill.position.set(-5, 3, -4);
     this.scene.add(fill);
 
@@ -191,6 +208,9 @@ export class ViewerEngine {
     cancelAnimationFrame(this.raf);
     this.ro.disconnect();
     this.clearModel();
+    this.scene.environment = null;
+    this.envMap.dispose();
+    this.pmrem.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

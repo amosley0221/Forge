@@ -186,7 +186,7 @@ const rawId = meshyRawTaskId;
 export async function startTextureStage(
   key: string,
   meshTaskId: string,
-  opts: { prompt?: string } = {},
+  opts: { prompt?: string; resolution?: '2k' | '4k' | '8k' } = {},
 ): Promise<string> {
   const created = await requestJson<MeshyCreate>(
     `${BASE}/v2/text-to-3d`,
@@ -197,6 +197,7 @@ export async function startTextureStage(
         mode: 'refine',
         preview_task_id: rawId(meshTaskId),
         enable_pbr: true,
+        ...(opts.resolution ? { texture_resolution: opts.resolution } : {}),
         ...(opts.prompt ? { texture_prompt: opts.prompt.slice(0, 800) } : {}),
       }),
     },

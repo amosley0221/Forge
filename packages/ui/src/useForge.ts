@@ -643,6 +643,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
             KINDS[opts.category] === 'creature' ? settings.creatureTriBudget : settings.triBudget,
           imageUrl: opts.imageUrl,
           texture: settings.textured,
+          textureResolution: settings.textureSize >= 4096 ? '4k' : '2k',
           texturePrompt: [opts.prompt, settings.style && `${settings.style} style`]
             .filter(Boolean)
             .join(', '),

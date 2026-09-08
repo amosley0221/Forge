@@ -43,6 +43,8 @@ export interface RunGenerationOptions extends GenerateOptions {
   texture?: boolean;
   /** Extra wording for the texture stage: "dark brown skin, red hoodie". */
   texturePrompt?: string;
+  /** Base-colour map size. Sharper costs no more credits, only more time. */
+  textureResolution?: '2k' | '4k' | '8k';
   signal?: AbortSignal;
   /** How often to ask the provider for status. */
   pollMs?: number;
@@ -130,7 +132,10 @@ export async function runGeneration(opts: RunGenerationOptions): Promise<Generat
   });
 
   emit('texturing', stage.label);
-  const textureTaskId = await stage.start(apiKey, meshTaskId, { prompt: opts.texturePrompt });
+  const textureTaskId = await stage.start(apiKey, meshTaskId, {
+    prompt: opts.texturePrompt,
+    resolution: opts.textureResolution,
+  });
   opts.onTaskCreated?.(textureTaskId, 'texture');
 
   return awaitTask({
