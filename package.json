@@ -1,8 +1,8 @@
 {
   "name": "forge",
   "private": true,
-  "version": "0.5.13",
-  "description": "Forge — AI 3D game asset studio (desktop + Android)",
+  "version": "0.5.14",
+  "description": "Forge \u2014 AI 3D game asset studio (desktop + Android)",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -15,7 +15,8 @@
     "dev:desktop": "npm run dev -w @forge/desktop",
     "dev:mobile": "npm run dev -w @forge/mobile",
     "typecheck": "npm run build:core && tsc -p apps/desktop/tsconfig.json && tsc -p apps/mobile/tsconfig.json",
-    "android:sync": "npm run build:mobile && npx --workspace @forge/mobile cap sync android"
+    "android:sync": "npm run build:mobile && npx --workspace @forge/mobile cap sync android",
+    "test": "npm run build -w @forge/core && node --test \"packages/core/test/*.test.mjs\""
   },
   "devDependencies": {
     "typescript": "^5.6.3"

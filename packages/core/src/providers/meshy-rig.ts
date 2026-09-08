@@ -38,6 +38,26 @@ function findGlb(obj: unknown, depth = 0): string | undefined {
   return undefined;
 }
 
+/**
+ * Meshy is inconsistent about wrapping: creating a task returns
+ * `{ result: "<id>" }` and the list endpoints return `{ result: [...] }`, so a
+ * status GET returning `{ result: { ... } }` is well within its habits. Read
+ * through one level of wrapper when the outer object has no status of its own,
+ * rather than mistaking a wrapped job for one that is still queued.
+ */
+function unwrap(payload: unknown): MeshyJob {
+  const outer = (payload ?? {}) as MeshyJob;
+  if (typeof outer.status === 'string') return outer;
+  for (const key of ['result', 'data', 'task'] as const) {
+    const inner = outer[key];
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      const job = inner as MeshyJob;
+      if (typeof job.status === 'string') return job;
+    }
+  }
+  return outer;
+}
+
 function mapJob(job: MeshyJob, what: string): TaskStatus {
   const progress = typeof job.progress === 'number' ? job.progress : 0;
   const status = String(job.status ?? '').toUpperCase();
@@ -111,12 +131,12 @@ export async function startRigging(
 }
 
 export async function riggingStatus(key: string, taskId: string): Promise<TaskStatus> {
-  const job = await requestJson<MeshyJob>(
+  const job = await requestJson<unknown>(
     `${BASE}/v1/rigging/${taskId}`,
     { headers: auth(key) },
     'Meshy rigging status',
   );
-  return mapJob(job, 'Meshy rigging');
+  return mapJob(unwrap(job), 'Meshy rigging');
 }
 
 export async function startAnimation(
@@ -138,12 +158,12 @@ export async function startAnimation(
 }
 
 export async function animationStatus(key: string, taskId: string): Promise<TaskStatus> {
-  const job = await requestJson<MeshyJob>(
+  const job = await requestJson<unknown>(
     `${BASE}/v1/animations/${taskId}`,
     { headers: auth(key) },
     'Meshy animation status',
   );
-  return mapJob(job, 'Meshy animation');
+  return mapJob(unwrap(job), 'Meshy animation');
 }
 
 export interface RigProgress {
