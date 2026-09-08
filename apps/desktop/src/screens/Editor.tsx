@@ -311,8 +311,8 @@ export function Editor() {
             <button
               type="button"
               onClick={() => {
-                if (!s.undoLast(a)) s.setLastReply('');
-                else s.setLastReply('');
+                s.undoLast(a);
+                s.setLastReply('');
               }}
               style={{
                 border: 'none',

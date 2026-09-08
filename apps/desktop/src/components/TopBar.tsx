@@ -1,6 +1,7 @@
 import { COLORS, MODES } from '@forge/core';
 import { SyncPill, mono } from '@forge/ui';
 import { useSessionCtx } from '../session.js';
+import { closeWindow, minimizeWindow, toggleMaximizeWindow } from '../windowControls.js';
 
 const A = COLORS.accent;
 
@@ -26,8 +27,29 @@ export function TopBar({ batch }: { batch?: { done: number; total: number } | nu
       data-tauri-drag-region
     >
       <div style={{ display: 'flex', gap: 8 }}>
-        {['#ff5f57', '#febc2e', '#28c840'].map((c) => (
-          <span key={c} style={{ width: 11, height: 11, borderRadius: 6, background: c }} />
+        {(
+          [
+            ['#ff5f57', 'Close', closeWindow],
+            ['#febc2e', 'Minimize', minimizeWindow],
+            ['#28c840', 'Maximize', toggleMaximizeWindow],
+          ] as const
+        ).map(([color, label, action]) => (
+          <button
+            key={label}
+            type="button"
+            title={label}
+            aria-label={label}
+            onClick={() => void action()}
+            style={{
+              width: 11,
+              height: 11,
+              padding: 0,
+              borderRadius: 6,
+              border: 'none',
+              background: color,
+              cursor: 'pointer',
+            }}
+          />
         ))}
       </div>
 

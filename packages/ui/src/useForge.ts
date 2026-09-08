@@ -128,17 +128,17 @@ export function useForge({ device, remote, syncedLabel }: UseForgeOptions) {
     setProgress(0);
     setActivePrompt(prompt);
     clearInterval(jobTimer.current);
+    // Progress is tracked in a ref rather than read back from state, so
+    // completion fires exactly once even when React re-invokes updaters.
+    let pct = 0;
     jobTimer.current = setInterval(() => {
-      setProgress((p) => {
-        const next = Math.min(100, p + 4 + Math.random() * 6);
-        if (next >= 100) {
-          clearInterval(jobTimer.current);
-          setGenerating(false);
-          onDone();
-          return 100;
-        }
-        return next;
-      });
+      pct = Math.min(100, pct + 4 + Math.random() * 6);
+      setProgress(pct);
+      if (pct >= 100) {
+        clearInterval(jobTimer.current);
+        setGenerating(false);
+        onDone();
+      }
     }, 110);
   }, []);
 
