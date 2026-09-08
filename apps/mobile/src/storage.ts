@@ -77,6 +77,11 @@ export function filesystemBlobStore(): BlobStore {
     async url(id) {
       const cached = urls.get(id);
       if (cached) return cached;
+      // getUri only assembles a path — it succeeds for a file that was never
+      // written. Without this stat the store hands back a URL to nothing, the
+      // viewer 404s on it, and sync concludes the model is already here and
+      // never downloads it.
+      if (!(await this.has(id))) return null;
       try {
         const { uri } = await Filesystem.getUri({ path: path(id), directory: Directory.Data });
         // The WebView cannot read file:// directly; Capacitor rewrites it.
@@ -85,6 +90,15 @@ export function filesystemBlobStore(): BlobStore {
         return webUrl;
       } catch {
         return null;
+      }
+    },
+    async has(id) {
+      if (urls.has(id)) return true;
+      try {
+        const info = await Filesystem.stat({ path: path(id), directory: Directory.Data });
+        return info.size > 0;
+      } catch {
+        return false;
       }
     },
     async remove(id) {

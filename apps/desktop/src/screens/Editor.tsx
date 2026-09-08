@@ -71,7 +71,7 @@ export function Editor({ s }: { s: Session }) {
         autorotate={s.turntable && !s.clip}
         clip={s.clip}
         speed={s.speed}
-        emptyMessage="This version has no model file cached on this computer"
+        emptyMessage="This version’s model file is not on this computer. Sync to download it."
         onPick={(part) => s.setSelected(part)}
         style={{ position: 'absolute', inset: 0 }}
       />

@@ -48,6 +48,18 @@ export interface GenerationProvider {
   textTo3D(key: string, opts: GenerateOptions): Promise<string>;
   imageTo3D(key: string, opts: GenerateOptions & { imageUrl: string }): Promise<string>;
   status(key: string, taskId: string): Promise<TaskStatus>;
+  /**
+   * Providers that build geometry and texture as separate, separately-charged
+   * tasks expose the second one here. Without it a model comes back untextured
+   * — no face, no clothing colour, one flat material. Providers that texture in
+   * a single pass simply omit it.
+   */
+  textureStage?: {
+    /** Shown on the progress bar while it runs. */
+    label: string;
+    /** Takes the finished mesh task and returns the texture task's id. */
+    start(key: string, meshTaskId: string, opts: { prompt?: string }): Promise<string>;
+  };
 }
 
 export class ProviderError extends Error {

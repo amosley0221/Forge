@@ -48,6 +48,11 @@ export function indexedDbBlobStore(dbName = 'forge-models'): BlobStore {
       urls.set(id, url);
       return url;
     },
+    async has(id) {
+      if (urls.has(id)) return true;
+      const key = await tx<IDBValidKey | undefined>('readonly', (s) => s.getKey(id));
+      return key !== undefined;
+    },
     async remove(id) {
       const url = urls.get(id);
       if (url) {

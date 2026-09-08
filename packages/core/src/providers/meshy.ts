@@ -104,7 +104,7 @@ export async function listRecentJobs(key: string, limit = 20): Promise<ProviderJ
 }
 
 export async function fetchTaskAssets(key: string, taskId: string): Promise<MeshyTaskAssets> {
-  const path = kindOf(taskId) === 'image' ? 'v1/image-to-3d' : 'v2/text-to-3d';
+  const path = pathFor(taskId);
   const task = await requestJson<MeshyTask>(
     `${BASE}/${path}/${rawId(taskId)}`,
     { headers: auth(key) },
@@ -158,10 +158,94 @@ function mapStatus(t: MeshyTask): TaskStatus {
  * paid job be resumed later. Anything talking to Meshy about the task itself —
  * rigging, for one — needs the bare id.
  */
-const kindOf = (taskId: string) => (taskId.startsWith('img:') ? 'image' : 'text');
+const kindOf = (taskId: string): 'image' | 'text' | 'texture' => {
+  if (taskId.startsWith('img:')) return 'image';
+  if (taskId.startsWith('tex:')) return 'texture';
+  return 'text';
+};
 
-export const meshyRawTaskId = (taskId: string) => taskId.replace(/^img:/, '');
+const PATHS = {
+  text: 'v2/text-to-3d',
+  image: 'v1/image-to-3d',
+  texture: 'v1/retexture',
+} as const;
+
+const pathFor = (taskId: string) => PATHS[kindOf(taskId)];
+
+export const meshyRawTaskId = (taskId: string) => taskId.replace(/^(img|tex):/, '');
 const rawId = meshyRawTaskId;
+
+/**
+ * Meshy builds a model in two stages: `preview` produces bare geometry, and
+ * `refine` paints it. Forge previously stopped after preview, which is why
+ * every model came out untextured — a grey mesh with no face, no clothing
+ * colour and a single material. Refine is a second, separately-charged task.
+ */
+export async function startTextureStage(
+  key: string,
+  meshTaskId: string,
+  opts: { prompt?: string } = {},
+): Promise<string> {
+  const created = await requestJson<MeshyCreate>(
+    `${BASE}/v2/text-to-3d`,
+    {
+      method: 'POST',
+      headers: auth(key),
+      body: JSON.stringify({
+        mode: 'refine',
+        preview_task_id: rawId(meshTaskId),
+        enable_pbr: true,
+        ...(opts.prompt ? { texture_prompt: opts.prompt.slice(0, 800) } : {}),
+      }),
+    },
+    'Meshy texture stage',
+  );
+  if (!created.result) throw new ProviderError('Meshy did not return a texture task id');
+  return created.result;
+}
+
+export interface RetextureOptions {
+  /** A Meshy task to re-skin. Preferred: Meshy already has the mesh. */
+  inputTaskId?: string;
+  /** A publicly reachable model instead, for anything Meshy did not build. */
+  modelUrl?: string;
+  /** What the object is — "a young man in a hoodie". */
+  objectPrompt?: string;
+  /** How it should look — "dark brown skin, red hoodie, blue jeans". */
+  stylePrompt: string;
+}
+
+/**
+ * Repaint an existing model without rebuilding its geometry.
+ *
+ * This is the honest answer to "change the skin tone / change the clothes":
+ * Meshy has no notion of a shirt or a face as separate editable things, so
+ * appearance is changed by re-texturing the whole model from a description.
+ * The mesh is untouched, so the result is the same character, repainted.
+ */
+export async function startRetexture(key: string, opts: RetextureOptions): Promise<string> {
+  if (!opts.inputTaskId && !opts.modelUrl) {
+    throw new ProviderError('Retexturing needs either a Meshy task or a model URL');
+  }
+  const created = await requestJson<MeshyCreate>(
+    `${BASE}/v1/retexture`,
+    {
+      method: 'POST',
+      headers: auth(key),
+      body: JSON.stringify({
+        ...(opts.inputTaskId
+          ? { input_task_id: rawId(opts.inputTaskId) }
+          : { model_url: opts.modelUrl }),
+        ...(opts.objectPrompt ? { object_prompt: opts.objectPrompt.slice(0, 600) } : {}),
+        text_style_prompt: opts.stylePrompt.slice(0, 600),
+        enable_pbr: true,
+      }),
+    },
+    'Meshy retexture',
+  );
+  if (!created.result) throw new ProviderError('Meshy did not return a retexture task id');
+  return 'tex:' + created.result;
+}
 
 export const meshy: GenerationProvider = {
   id: 'meshy',
@@ -230,8 +314,13 @@ export const meshy: GenerationProvider = {
     return 'img:' + created.result;
   },
 
+  textureStage: {
+    label: 'Painting the textures',
+    start: startTextureStage,
+  },
+
   async status(key: string, taskId: string): Promise<TaskStatus> {
-    const path = kindOf(taskId) === 'image' ? 'v1/image-to-3d' : 'v2/text-to-3d';
+    const path = pathFor(taskId);
     const task = await requestJson<MeshyTask>(
       `${BASE}/${path}/${rawId(taskId)}`,
       { headers: auth(key) },

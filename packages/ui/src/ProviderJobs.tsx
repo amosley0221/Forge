@@ -76,7 +76,17 @@ export function ProviderJobs({ enabled, onList, onImport, onOpen }: ProviderJobs
       )}
 
       {jobs && jobs.length > 0 && (
-        <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
+        <div
+          style={{
+            display: 'grid',
+            // Grid items default to min-width:auto, which lets a row grow to the
+            // full untruncated width of its prompt and push Import off the panel.
+            // An explicit minmax(0, 1fr) column is what makes the ellipsis engage.
+            gridTemplateColumns: 'minmax(0, 1fr)',
+            gap: 6,
+            marginTop: 10,
+          }}
+        >
           {jobs.map((job) => (
             <div
               key={job.taskId}
@@ -84,6 +94,7 @@ export function ProviderJobs({ enabled, onList, onImport, onOpen }: ProviderJobs
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10,
+                minWidth: 0,
                 padding: 9,
                 borderRadius: 8,
                 background: COLORS.surface,
@@ -97,6 +108,7 @@ export function ProviderJobs({ enabled, onList, onImport, onOpen }: ProviderJobs
                   style={{
                     width: 40,
                     height: 40,
+                    flexShrink: 0,
                     borderRadius: 6,
                     objectFit: 'cover',
                     background: COLORS.control,
@@ -107,6 +119,7 @@ export function ProviderJobs({ enabled, onList, onImport, onOpen }: ProviderJobs
                   style={{
                     width: 40,
                     height: 40,
+                    flexShrink: 0,
                     borderRadius: 6,
                     background: COLORS.control,
                     display: 'grid',
@@ -122,11 +135,14 @@ export function ProviderJobs({ enabled, onList, onImport, onOpen }: ProviderJobs
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
+                  title={job.prompt}
                   style={{
                     fontSize: 12,
+                    lineHeight: 1.35,
+                    display: '-webkit-box',
+                    WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 2,
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
                   }}
                 >
                   {job.prompt}
@@ -159,6 +175,7 @@ export function ProviderJobs({ enabled, onList, onImport, onOpen }: ProviderJobs
                   fontSize: 11,
                   cursor: job.succeeded ? 'pointer' : 'not-allowed',
                   whiteSpace: 'nowrap',
+                  flexShrink: 0,
                 }}
               >
                 {importing === job.taskId ? 'Importing…' : 'Import'}

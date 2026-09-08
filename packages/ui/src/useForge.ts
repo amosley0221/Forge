@@ -310,7 +310,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
         for (const asset of merged) {
           for (const v of asset.versions) {
             if (!v.fileId) continue;
-            if (await blobs.url(v.fileId)) continue;
+            if (await blobs.has(v.fileId)) continue;
             const blob = await downloadModel(cfg, v.fileId);
             if (blob) {
               await blobs.put(v.fileId, blob);
@@ -324,6 +324,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
         for (const asset of merged) {
           for (const v of asset.versions) {
             if (!v.fileId || knownFiles.has(v.fileId)) continue;
+            if (!(await blobs.has(v.fileId))) continue;
             const blob = await readBlob(blobs, v.fileId);
             if (!blob) continue;
             await uploadModel(cfg, v.fileId, blob);

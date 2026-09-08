@@ -60,7 +60,7 @@ export function AssetTab({ s }: { s: MobileSession }) {
             selected={s.selected}
             autorotate={!s.clip}
             compact
-            emptyMessage="This version has no model file on this device"
+            emptyMessage="This version’s model file is not on this device. Sync to download it."
             onPick={(part) => s.setSelected(part)}
           />
           {a.clips.length > 0 && (
