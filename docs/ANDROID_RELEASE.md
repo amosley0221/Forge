@@ -60,6 +60,14 @@ Pushing the tag runs `.github/workflows/release.yml`, which:
 You can also run it by hand from the Actions tab (**Release** → *Run workflow*) and
 type a version — useful for a one-off or a pre-release.
 
+If you are somewhere that can push a branch but not a tag (a CI runner with a
+scoped token, say), push a `release/v<version>` branch instead — it cuts exactly
+the same release and creates the tag for you:
+
+```bash
+git push origin main:release/v0.4.1
+```
+
 Assets on each release:
 
 ```

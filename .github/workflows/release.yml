@@ -10,6 +10,11 @@ on:
   push:
     tags:
       - 'v*'
+    # Same release, for environments that can push a branch but not a tag
+    # (CI runners with a scoped token, for example). `release/v0.5.0` cuts
+    # exactly the release `v0.5.0` would; the workflow creates the tag.
+    branches:
+      - 'release/v*'
   workflow_dispatch:
     inputs:
       version:
@@ -43,6 +48,8 @@ jobs:
           set -euo pipefail
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
+          elif [ "${GITHUB_REF_NAME}" != "${GITHUB_REF_NAME#release/v}" ]; then
+            VERSION="${GITHUB_REF_NAME#release/v}"
           elif [ -n "${{ inputs.version }}" ]; then
             VERSION="${{ inputs.version }}"
           else
