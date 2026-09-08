@@ -65,6 +65,10 @@ provider API can deliver:
 - **Android release and in-app updates** — signed APK, `latest.json`, install in place.
 - **Desktop in-app updates** — Tauri's updater against a signed `updater.json`; the app
   replaces itself and restarts.
+- **Shared library over GitHub** — point both devices at one repository and they show
+  the same assets. Forge syncs on launch and whenever you return to it; models are plain
+  `.glb` files under `models/`, browsable and downloadable from github.com. The token
+  lives beside the provider key and never enters project data.
 - **Paid-job recovery** — a provider charges the moment it accepts a job, so the task id
   is written down before anything else can fail. If the download or the mesh import dies,
   the job stays in a "didn't finish" list and can be completed without spending credits
@@ -80,10 +84,9 @@ provider API can deliver:
 - **Sprite-sheet batches.** `packages/core/src/spritesheet.ts` does real analysis
   (frame-grid detection from transparent gutters or even division, plus palette
   extraction) but no provider offers sheet→3D, so it is not wired to a screen.
-- **Cross-device cloud sync.** The store has a server-backed transport with an offline
-  queue (`packages/core/src/store.ts`) and `server/schema.sql` has the schema, but
-  there is no deployed backend — the apps run local-first and say "no provider"
-  rather than implying a cloud that isn't there.
+- **A hosted backend.** Sync goes through a GitHub repository you own rather than a
+  Forge server. `packages/core/src/store.ts` still carries a server-backed transport and
+  `server/schema.sql` the schema, for anyone who would rather run one.
 
 > The Meshy rigging and animation endpoints in `packages/core/src/providers/meshy-rig.ts`
 > are written against Meshy's documented v1 API and parse responses defensively, but

@@ -52,6 +52,8 @@ const PROVIDER_KEY = 'forge.provider.v1';
 const SECRET_KEY = 'forge.provider.apiKey';
 const ONBOARDED_KEY = 'forge.onboarded.v1';
 const PENDING_KEY = 'forge.pendingTasks.v1';
+const SYNC_KEY = 'forge.sync.v1';
+const SYNC_TOKEN_KEY = 'forge.sync.token';
 
 export async function loadSettings(store: KeyValueStore): Promise<ProjectSettings> {
   const raw = await store.get(SETTINGS_KEY);
@@ -98,6 +100,45 @@ export async function hasOnboarded(store: KeyValueStore): Promise<boolean> {
 export async function setOnboarded(store: KeyValueStore): Promise<void> {
   await store.set(ONBOARDED_KEY, '1');
 }
+
+/* ------------------------------------------------------------------ *
+ * GitHub-backed library sync
+ * ------------------------------------------------------------------ */
+
+export interface SyncConfig {
+  owner: string;
+  repo: string;
+  branch: string;
+  /** Off until the user connects a repository. */
+  enabled: boolean;
+}
+
+export const DEFAULT_SYNC: SyncConfig = {
+  owner: '',
+  repo: '',
+  branch: 'main',
+  enabled: false,
+};
+
+export async function loadSync(store: KeyValueStore): Promise<SyncConfig> {
+  const raw = await store.get(SYNC_KEY);
+  if (!raw) return { ...DEFAULT_SYNC };
+  try {
+    return { ...DEFAULT_SYNC, ...(JSON.parse(raw) as Partial<SyncConfig>) };
+  } catch {
+    return { ...DEFAULT_SYNC };
+  }
+}
+
+export async function saveSync(store: KeyValueStore, cfg: SyncConfig): Promise<void> {
+  await store.set(SYNC_KEY, JSON.stringify(cfg));
+}
+
+/** The GitHub token lives beside the provider key, never in project state. */
+export const loadSyncToken = (secrets: SecretStore) => secrets.get(SYNC_TOKEN_KEY);
+export const saveSyncToken = (secrets: SecretStore, token: string) =>
+  secrets.set(SYNC_TOKEN_KEY, token);
+export const clearSyncToken = (secrets: SecretStore) => secrets.remove(SYNC_TOKEN_KEY);
 
 /* ------------------------------------------------------------------ *
  * Paid-but-unfinished provider tasks

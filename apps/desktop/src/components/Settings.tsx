@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { COLORS, PROVIDERS, STYLES, formatBytes, httpClientName, providerById } from '@forge/core';
 import type { ProviderId } from '@forge/core';
-import { Chip, Panel, SectionLabel, Spinner, mono } from '@forge/ui';
+import { Chip, Panel, SectionLabel, Spinner, SyncSettings, mono } from '@forge/ui';
 import type { Session } from '../session.js';
 import { secretsAreSecure } from '../storage.js';
 import { APP_VERSION } from '../version.js';
@@ -230,6 +230,16 @@ export function Settings({ s }: { s: Session }) {
               {s.settings.guide ? 'on' : 'off'}
             </button>
           </Row>
+
+          <SectionLabel style={{ margin: '22px 0 10px' }}>Sync with your other devices</SectionLabel>
+          <SyncSettings
+            config={s.syncConfig}
+            connected={s.syncConnected}
+            state={s.syncState}
+            onConnect={s.connectSync}
+            onDisconnect={s.disconnectSync}
+            onSyncNow={s.syncNow}
+          />
 
           <SectionLabel style={{ margin: '22px 0 10px' }}>Storage</SectionLabel>
           <Row label="Assets">{String(s.assets.length)}</Row>

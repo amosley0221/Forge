@@ -15,6 +15,18 @@ import {
   currentVersion,
   loadPendingTasks,
   savePendingTasks,
+  checkAccess,
+  clearSyncToken,
+  downloadModel,
+  fetchLibrary,
+  loadSync,
+  loadSyncToken,
+  mergeLibraries,
+  pushLibrary,
+  readBlob,
+  saveSync,
+  saveSyncToken,
+  uploadModel,
   listActions,
   meshyRawTaskId,
   rigModel,
@@ -36,8 +48,10 @@ import type {
   KeyValueStore,
   MeshStats,
   ProjectSettings,
+  GitHubConfig,
   ProviderCredentials,
   RemoteConfig,
+  SyncConfig,
   SecretStore,
   SyncMeta,
   SyncTransport,
@@ -83,6 +97,13 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   const [toast, setToast] = useState('');
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingTask[]>([]);
+  const [syncConfig, setSyncConfig] = useState<SyncConfig | null>(null);
+  const [syncToken, setSyncToken] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<{
+    status: 'off' | 'idle' | 'syncing' | 'error';
+    lastSyncedAt: number | null;
+    message: string | null;
+  }>({ status: 'off', lastSyncedAt: null, message: null });
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const abort = useRef<AbortController | null>(null);
@@ -96,17 +117,25 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const [s, c, done, tasks] = await Promise.all([
+      const [s, c, done, tasks, sync, token] = await Promise.all([
         loadSettings(store),
         loadProvider(store, secrets),
         hasOnboarded(store),
         loadPendingTasks(store),
+        loadSync(store),
+        loadSyncToken(secrets),
       ]);
       if (!alive) return;
       setSettingsState(s);
       setCredentials(c);
       setOnboardedState(done);
       setPending(tasks);
+      setSyncConfig(sync);
+      setSyncToken(token);
+      setSyncState((prev) => ({
+        ...prev,
+        status: sync.enabled && token ? 'idle' : 'off',
+      }));
     })();
     return () => {
       alive = false;
@@ -235,6 +264,145 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     },
     [upsert, say, blobs],
   );
+
+  /* ---------------------------------------------------------------- */
+  /* GitHub-backed library sync                                         */
+  /* ---------------------------------------------------------------- */
+
+  const ghConfig = useCallback((): GitHubConfig | null => {
+    if (!syncConfig?.enabled || !syncToken || !syncConfig.owner || !syncConfig.repo) return null;
+    return {
+      owner: syncConfig.owner,
+      repo: syncConfig.repo,
+      branch: syncConfig.branch || 'main',
+      token: syncToken,
+    };
+  }, [syncConfig, syncToken]);
+
+  const syncing = useRef(false);
+
+  /**
+   * Pull what the other device wrote, push what this one has. Model files are
+   * immutable and addressed by id, so they are only ever uploaded once; the
+   * manifest is the only thing that changes.
+   *
+   * Nothing is deleted by a sync — an asset the other side has not seen is
+   * treated as new, never as removed — so a stale device cannot wipe the
+   * library.
+   */
+  const syncNow = useCallback(
+    async (opts: { quiet?: boolean } = {}): Promise<boolean> => {
+      const cfg = ghConfig();
+      if (!cfg || syncing.current) return false;
+      syncing.current = true;
+      setSyncState((p) => ({ ...p, status: 'syncing', message: null }));
+
+      try {
+        const { manifest, sha } = await fetchLibrary(cfg);
+        const remoteAssets = manifest?.assets ?? [];
+        const merged = mergeLibraries(assetsRef.current, remoteAssets);
+
+        // Fetch any model this device is missing.
+        for (const asset of merged) {
+          for (const v of asset.versions) {
+            if (!v.fileId) continue;
+            if (await blobs.url(v.fileId)) continue;
+            const blob = await downloadModel(cfg, v.fileId);
+            if (blob) await blobs.put(v.fileId, blob);
+          }
+        }
+
+        // Upload any model the repo is missing.
+        for (const asset of merged) {
+          for (const v of asset.versions) {
+            if (!v.fileId) continue;
+            const blob = await readBlob(blobs, v.fileId);
+            if (blob) await uploadModel(cfg, v.fileId, blob);
+          }
+        }
+
+        const changed =
+          merged.length !== remoteAssets.length ||
+          merged.some((a) => {
+            const r = remoteAssets.find((x) => x.id === a.id);
+            return !r || r.updatedAt !== a.updatedAt;
+          });
+
+        if (changed) {
+          await pushLibrary(
+            cfg,
+            { version: 1, updatedAt: Date.now(), device, assets: merged },
+            sha,
+          );
+        }
+
+        // Adopt the merged view locally.
+        const remoteBrought = merged.length - assetsRef.current.length;
+        if (changed || remoteBrought !== 0) {
+          setAssets(merged);
+          transport.save(merged, { from: device });
+        }
+
+        setSyncState({ status: 'idle', lastSyncedAt: Date.now(), message: null });
+        if (!opts.quiet && remoteBrought > 0) {
+          say(`Synced — ${remoteBrought} asset${remoteBrought > 1 ? 's' : ''} pulled in`);
+        }
+        return true;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Sync failed';
+        setSyncState((p) => ({ ...p, status: 'error', message }));
+        if (!opts.quiet) say(message);
+        return false;
+      } finally {
+        syncing.current = false;
+      }
+    },
+    [ghConfig, blobs, device, transport, say],
+  );
+
+  const connectSync = useCallback(
+    async (cfg: SyncConfig, token: string): Promise<{ ok: boolean; message: string }> => {
+      const check = await checkAccess({ ...cfg, branch: cfg.branch || 'main', token });
+      if (!check.ok) return check;
+      const next = { ...cfg, branch: cfg.branch || 'main', enabled: true };
+      await saveSync(store, next);
+      await saveSyncToken(secrets, token);
+      setSyncConfig(next);
+      setSyncToken(token);
+      setSyncState({ status: 'idle', lastSyncedAt: null, message: null });
+      return check;
+    },
+    [store, secrets],
+  );
+
+  const disconnectSync = useCallback(async () => {
+    const next = { ...(syncConfig ?? { owner: '', repo: '', branch: 'main' }), enabled: false };
+    await saveSync(store, next as SyncConfig);
+    await clearSyncToken(secrets);
+    setSyncConfig(next as SyncConfig);
+    setSyncToken(null);
+    setSyncState({ status: 'off', lastSyncedAt: null, message: null });
+  }, [store, secrets, syncConfig]);
+
+  // Sync as soon as a connected config loads, and again whenever the window
+  // regains focus — which is what makes "open it and the latest is there" true
+  // on both platforms, including an Android app resuming from the background.
+  useEffect(() => {
+    if (!syncConfig?.enabled || !syncToken) return;
+    void syncNow({ quiet: true });
+
+    const onFocus = () => void syncNow({ quiet: true });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', onFocus);
+      document.addEventListener('visibilitychange', onFocus);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', onFocus);
+        document.removeEventListener('visibilitychange', onFocus);
+      }
+    };
+  }, [syncConfig?.enabled, syncConfig?.owner, syncConfig?.repo, syncToken, syncNow]);
 
   /* ---------------------------------------------------------------- */
   /* Paid-but-unfinished tasks                                          */
@@ -720,6 +888,12 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     importModel,
     cancelJob,
     pendingTasks: pending,
+    syncConfig,
+    syncState,
+    syncNow,
+    connectSync,
+    disconnectSync,
+    syncConnected: Boolean(syncConfig?.enabled && syncToken),
     recoverTask,
     forgetTask,
     dismissError: () => setJob(IDLE_JOB),
