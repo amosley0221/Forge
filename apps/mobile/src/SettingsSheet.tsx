@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { COLORS, PROVIDERS, STYLES, providerById } from '@forge/core';
 import type { ProviderId } from '@forge/core';
-import { Spinner, SyncSettings, mono } from '@forge/ui';
+import { ProviderJobs, Spinner, SyncSettings, mono } from '@forge/ui';
 import type { MobileSession } from './session.js';
 import { APP_VERSION } from './version.js';
 import { RELEASES_PAGE, checkForUpdate, currentVersion, installUpdate } from './updater.js';
@@ -242,6 +242,17 @@ export function SettingsSheet({ s }: { s: MobileSession }) {
           Passed to the provider as a target polycount. What you actually get back is whatever it
           produces — the real count is shown on each asset.
         </p>
+
+        <Section title="Recent jobs on your provider" />
+        <ProviderJobs
+          enabled={s.canListJobs}
+          onList={s.listProviderJobs}
+          onImport={s.importProviderJob}
+          onOpen={(asset) => {
+            s.setSettingsOpen(false);
+            s.open(asset.id);
+          }}
+        />
 
         <Section title="Sync with your other devices" />
         <SyncSettings

@@ -3,7 +3,9 @@ import { tripo } from './tripo.js';
 import type { GenerationProvider, ProviderId } from './types.js';
 
 export * from './types.js';
-export { meshy, meshyRawTaskId } from './meshy.js';
+export { meshy, meshyRawTaskId, fetchTaskAssets } from './meshy.js';
+export { listRecentJobs } from './meshy.js';
+export type { MeshyTaskAssets, ProviderJob } from './meshy.js';
 export { tripo } from './tripo.js';
 export * from './meshy-rig.js';
 

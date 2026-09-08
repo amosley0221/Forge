@@ -67,16 +67,53 @@ public class ForgeFilesPlugin extends Plugin {
         }
     }
 
+    /** Same, for bytes the app already holds — an export zip, for instance. */
+    @PluginMethod
+    public void saveBase64ToDownloads(PluginCall call) {
+        String base64 = call.getString("base64");
+        String name = call.getString("name", "export.zip");
+        String mime = call.getString("mimeType", "application/zip");
+        if (base64 == null || base64.isEmpty()) {
+            call.reject("Missing base64");
+            return;
+        }
+
+        try {
+            byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+            File temp = File.createTempFile("forge-export", null, getContext().getCacheDir());
+            try (OutputStream out = new FileOutputStream(temp)) {
+                out.write(bytes);
+            }
+            String uri =
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                            ? saveViaMediaStore(temp, name, mime)
+                            : saveLegacy(temp, name);
+            //noinspection ResultOfMethodCallIgnored
+            temp.delete();
+
+            JSObject result = new JSObject();
+            result.put("uri", uri);
+            result.put("name", name);
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Could not save to Downloads: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Android 10+ has no direct write access to shared storage, so the file is
      * handed to MediaStore, which places it in Downloads and indexes it.
      */
     private String saveViaMediaStore(File source, String name) throws Exception {
+        return saveViaMediaStore(source, name, MIME_GLB);
+    }
+
+    private String saveViaMediaStore(File source, String name, String mime) throws Exception {
         ContentResolver resolver = getContext().getContentResolver();
 
         ContentValues values = new ContentValues();
         values.put(MediaStore.Downloads.DISPLAY_NAME, name);
-        values.put(MediaStore.Downloads.MIME_TYPE, MIME_GLB);
+        values.put(MediaStore.Downloads.MIME_TYPE, mime);
         values.put(MediaStore.Downloads.IS_PENDING, 1);
 
         Uri target = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);

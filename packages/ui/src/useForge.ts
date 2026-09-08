@@ -28,6 +28,7 @@ import {
   saveSyncToken,
   uploadModel,
   listActions,
+  listRecentJobs,
   meshyRawTaskId,
   rigModel,
   runGeneration,
@@ -39,6 +40,7 @@ import type {
   Asset,
   MeshyAction,
   PendingTask,
+  ProviderJob,
   AssetVersion,
   BlobStore,
   Category,
@@ -280,6 +282,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   }, [syncConfig, syncToken]);
 
   const syncing = useRef(false);
+  const recoverTaskRef = useRef<((task: PendingTask) => Promise<Asset | null>) | null>(null);
 
   /**
    * Pull what the other device wrote, push what this one has. Model files are
@@ -379,7 +382,12 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     async (cfg: SyncConfig, token: string): Promise<{ ok: boolean; message: string }> => {
       const check = await checkAccess({ ...cfg, branch: cfg.branch || 'main', token });
       if (!check.ok) return check;
-      const next = { ...cfg, branch: cfg.branch || 'main', enabled: true };
+      // Use whatever the repository actually calls its default branch.
+      const next = {
+        ...cfg,
+        branch: check.defaultBranch || cfg.branch || 'main',
+        enabled: true,
+      };
       await saveSync(store, next);
       await saveSyncToken(secrets, token);
       setSyncConfig(next);
@@ -680,6 +688,38 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   );
 
   /**
+   * Everything this provider key has generated, including jobs Forge never
+   * saw — API jobs do not show up in Meshy's web workspace, so this is the
+   * only way to find a model you paid for and lost.
+   */
+  const listProviderJobs = useCallback(async (): Promise<ProviderJob[]> => {
+    if (credentials.provider !== 'meshy' || !credentials.apiKey) {
+      say('Listing past jobs needs a connected Meshy key.');
+      return [];
+    }
+    try {
+      return await listRecentJobs(credentials.apiKey);
+    } catch (e) {
+      say(e instanceof Error ? e.message : 'Could not list your jobs');
+      return [];
+    }
+  }, [credentials, say]);
+
+  /** Pull one of those jobs into the library. Downloads only — no new task. */
+  const importProviderJob = useCallback(
+    async (job: ProviderJob): Promise<Asset | null> =>
+      recoverTaskRef.current?.({
+        taskId: job.taskId,
+        provider: 'meshy',
+        prompt: job.prompt === '(no prompt)' ? '' : job.prompt,
+        category: 'Prop',
+        source: job.source,
+        createdAt: job.createdAt || Date.now(),
+      }) ?? null,
+    [],
+  );
+
+  /**
    * Finish a task the provider already built and charged for. No new task is
    * submitted, so this costs nothing.
    */
@@ -733,6 +773,8 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     },
     [credentials, landResult, forgetTask, markTaskFailed, say],
   );
+
+  recoverTaskRef.current = recoverTask;
 
   /* ---------------------------------------------------------------- */
   /* Rigging and animation (Meshy)                                      */
@@ -911,6 +953,9 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     syncConnected: Boolean(syncConfig?.enabled && syncToken),
     recoverTask,
     forgetTask,
+    listProviderJobs,
+    importProviderJob,
+    canListJobs: credentials.provider === 'meshy' && Boolean(credentials.apiKey),
     dismissError: () => setJob(IDLE_JOB),
     rig,
     addClip,

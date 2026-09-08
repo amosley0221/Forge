@@ -8,4 +8,5 @@ export * from './github.js';
 export * from './blobstore.js';
 export * from './providers/index.js';
 export * from './generation.js';
+export * from './exporters.js';
 export * from './spritesheet.js';

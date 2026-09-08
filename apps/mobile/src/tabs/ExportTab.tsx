@@ -1,11 +1,22 @@
 import { useState } from 'react';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
-import { COLORS, ENGINES, formatBytes, formatSize, formatTris, readBlob } from '@forge/core';
+import {
+  COLORS,
+  ENGINES,
+  buildExportBundle,
+  exportOptions,
+  formatBytes,
+  formatSize,
+  formatTris,
+  isBundled,
+  readBlob,
+} from '@forge/core';
+import type { ExportFormat } from '@forge/core';
 import { mono } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 import { modelFileUri } from '../storage.js';
-import { canSaveToDownloads, saveModelToDownloads } from '../files.js';
+import { canSaveToDownloads, saveBlobToDownloads, saveModelToDownloads } from '../files.js';
 
 const A = COLORS.accent;
 
@@ -19,6 +30,8 @@ export function ExportTab({ s }: { s: MobileSession }) {
   const v = s.version;
   const [busy, setBusy] = useState(false);
   const [savedTo, setSavedTo] = useState<string | null>(null);
+  const [format, setFormat] = useState<ExportFormat>('glb');
+  const [progress, setProgress] = useState<string | null>(null);
   if (!a || !v) return null;
 
   const engine = ENGINES[s.engineIdx];
@@ -58,19 +71,38 @@ export function ExportTab({ s }: { s: MobileSession }) {
     }
   };
 
+  const options = exportOptions(v);
+  const chosen = options.find((o) => o.format === format) ?? options[0];
+
   const saveToDownloads = async () => {
-    if (!v.fileId) {
-      s.say('This version has no model file on this device.');
-      return;
-    }
     setBusy(true);
+    setSavedTo(null);
     try {
-      await saveModelToDownloads(v.fileId, `${a.name}_${v.label}.glb`);
-      setSavedTo(`Downloads/${a.name}_${v.label}.glb`);
+      if (isBundled(format)) {
+        if (!v.taskId || !s.credentials.apiKey) {
+          throw new Error('This version has no Meshy task behind it to fetch other formats from.');
+        }
+        const blob = await buildExportBundle({
+          apiKey: s.credentials.apiKey,
+          taskId: v.taskId,
+          format: format as 'fbx' | 'obj',
+          name: `${a.name}_${v.label}`,
+          onProgress: (p) => setProgress(p.label),
+        });
+        const name = `${a.name}_${v.label}_${format}.zip`;
+        await saveBlobToDownloads(blob, name);
+        setSavedTo(`Downloads/${name}`);
+      } else {
+        if (!v.fileId) throw new Error('This version has no model file on this device.');
+        const name = `${a.name}_${v.label}.glb`;
+        await saveModelToDownloads(v.fileId, name);
+        setSavedTo(`Downloads/${name}`);
+      }
       s.say('Saved to your Downloads folder');
     } catch (e) {
       s.say(e instanceof Error ? e.message : 'Could not save the model');
     } finally {
+      setProgress(null);
       setBusy(false);
     }
   };
@@ -81,6 +113,35 @@ export function ExportTab({ s }: { s: MobileSession }) {
       <div style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted, marginTop: 2 }}>
         {v.label} · {formatTris(v.stats.triangles)} tris
       </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '14px 0 8px' }}>
+        {options.map((o) => {
+          const on = o.format === format;
+          return (
+            <button
+              key={o.format}
+              type="button"
+              onClick={() => o.available && setFormat(o.format)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 20,
+                border: `1px solid ${on ? A : COLORS.inputBorder}`,
+                background: on ? A : 'transparent',
+                color: on ? COLORS.ink : COLORS.text2,
+                fontWeight: on ? 600 : 400,
+                fontSize: 12,
+                opacity: o.available ? 1 : 0.45,
+                cursor: o.available ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+      <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 14px' }}>
+        {chosen.note}
+      </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '14px 0' }}>
         {ENGINES.map((e, i) => {
@@ -108,7 +169,7 @@ export function ExportTab({ s }: { s: MobileSession }) {
       </div>
 
       {[
-        ['File you get', 'GLB'],
+        ['File you get', isBundled(format) ? `${format.toUpperCase()} + textures (.zip)` : 'GLB'],
         [`${engine.name} expects`, engine.format],
         ['Axis · units', engine.axis],
         ['Triangles', formatTris(v.stats.triangles)],
@@ -133,10 +194,9 @@ export function ExportTab({ s }: { s: MobileSession }) {
         </div>
       ))}
 
-      {engine.format !== 'GLB' && engine.format !== 'GLB + PNG' && (
+      {engine.format.startsWith('FBX') && format !== 'fbx' && (
         <p style={{ fontSize: 11, color: A, lineHeight: 1.6, marginTop: 14 }}>
-          {engine.name} prefers {engine.format}. Forge exports the GLB as-is — convert it in your
-          engine or with a tool like Blender before importing.
+          {engine.name} prefers FBX — pick <strong>FBX + textures</strong> above.
         </p>
       )}
 
@@ -164,14 +224,14 @@ export function ExportTab({ s }: { s: MobileSession }) {
           cursor: 'pointer',
         }}
       >
-        {busy ? 'Preparing…' : `Share ${a.name}_${v.label}.glb`}
+        {busy ? (progress ?? 'Preparing…') : `Share ${a.name}_${v.label}.glb`}
       </button>
 
       {canSaveToDownloads() && (
         <button
           type="button"
           onClick={() => void saveToDownloads()}
-          disabled={busy || !v.fileId}
+          disabled={busy || !chosen.available}
           style={{
             width: '100%',
             marginTop: 9,
@@ -184,7 +244,7 @@ export function ExportTab({ s }: { s: MobileSession }) {
             cursor: 'pointer',
           }}
         >
-          Save to Downloads
+          {isBundled(format) ? `Save ${format.toUpperCase()} + textures to Downloads` : 'Save to Downloads'}
         </button>
       )}
 

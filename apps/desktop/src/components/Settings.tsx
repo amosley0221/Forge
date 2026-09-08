@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { COLORS, PROVIDERS, STYLES, formatBytes, httpClientName, providerById } from '@forge/core';
 import type { ProviderId } from '@forge/core';
-import { Chip, Panel, SectionLabel, Spinner, SyncSettings, mono } from '@forge/ui';
+import { Chip, Panel, ProviderJobs, SectionLabel, Spinner, SyncSettings, mono } from '@forge/ui';
 import type { Session } from '../session.js';
 import { secretsAreSecure } from '../storage.js';
 import { APP_VERSION } from '../version.js';
@@ -230,6 +230,17 @@ export function Settings({ s }: { s: Session }) {
               {s.settings.guide ? 'on' : 'off'}
             </button>
           </Row>
+
+          <SectionLabel style={{ margin: '22px 0 10px' }}>Recent jobs on your provider</SectionLabel>
+          <ProviderJobs
+            enabled={s.canListJobs}
+            onList={s.listProviderJobs}
+            onImport={s.importProviderJob}
+            onOpen={(asset) => {
+              s.setSettingsOpen(false);
+              s.openAsset(asset.id);
+            }}
+          />
 
           <SectionLabel style={{ margin: '22px 0 10px' }}>Sync with your other devices</SectionLabel>
           <SyncSettings

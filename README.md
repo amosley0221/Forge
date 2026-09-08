@@ -60,8 +60,11 @@ provider API can deliver:
   measured from the loaded file, never invented.
 - **Library and versions** — append-only version history with undo, stored on device
   (IndexedDB on desktop, real files on Android) and mirrored across tabs/devices.
-- **Import and export** — import any `.glb`/`.gltf`; export hands over the real file
-  (Share sheet on Android, download on desktop).
+- **Import and export** — import any `.glb`/`.gltf`; export hands over the real file.
+  Meshy builds FBX and OBJ from the same job as the GLB, so those export as a zip of the
+  model plus its texture maps — no conversion, no extra credits. Unity wants FBX.
+- **Past provider jobs** — API jobs never appear in Meshy's own workspace, so Settings
+  lists everything your key has built and lets you pull any of it in. Downloads only.
 - **Android release and in-app updates** — signed APK, `latest.json`, install in place.
 - **Desktop in-app updates** — Tauri's updater against a signed `updater.json`; the app
   replaces itself and restarts.

@@ -98,19 +98,30 @@ async function failure(res: Response, what: string): Promise<GitHubError> {
 }
 
 /** Confirm the token works and the repo is writable before saving any of it. */
-export async function checkAccess(cfg: GitHubConfig): Promise<{ ok: boolean; message: string }> {
+export async function checkAccess(
+  cfg: GitHubConfig,
+): Promise<{ ok: boolean; message: string; defaultBranch?: string; empty?: boolean }> {
   const res = await request(cfg, `/repos/${cfg.owner}/${cfg.repo}`);
   if (!res.ok) {
     const err = await failure(res, 'Repository check');
     return { ok: false, message: err.message };
   }
-  const repo = (await res.json()) as { permissions?: { push?: boolean }; private?: boolean };
+  const repo = (await res.json()) as {
+    permissions?: { push?: boolean };
+    private?: boolean;
+    default_branch?: string;
+    size?: number;
+  };
   if (repo.permissions && repo.permissions.push === false) {
     return { ok: false, message: 'The token can read this repository but not write to it.' };
   }
   return {
     ok: true,
     message: `Connected to ${cfg.owner}/${cfg.repo}${repo.private ? ' (private)' : ''}`,
+    defaultBranch: repo.default_branch,
+    // A repository created with no README has no branch at all until the
+    // first commit, so the first write must not name one.
+    empty: (repo.size ?? 0) === 0,
   };
 }
 
@@ -158,11 +169,24 @@ async function putFile(
   message: string,
   sha?: string,
 ): Promise<void> {
-  const res = await request(cfg, `/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(path)}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message, content, branch: cfg.branch, ...(sha ? { sha } : {}) }),
-  });
+  const write = (branch?: string) =>
+    request(cfg, `/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(path)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        content,
+        ...(branch ? { branch } : {}),
+        ...(sha ? { sha } : {}),
+      }),
+    });
+
+  let res = await write(cfg.branch);
+  if (res.status === 404 && cfg.branch) {
+    // An empty repository has no branches yet; writing without naming one
+    // creates the default branch along with the file.
+    res = await write(undefined);
+  }
   if (!res.ok) throw await failure(res, `Writing ${path}`);
 }
 

@@ -11,9 +11,121 @@ interface MeshyTask {
   id: string;
   status: 'PENDING' | 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED' | 'CANCELED';
   progress?: number;
-  model_urls?: { glb?: string; fbx?: string; obj?: string; usdz?: string };
+  model_urls?: { glb?: string; fbx?: string; obj?: string; usdz?: string; mtl?: string };
+  texture_urls?: Record<string, string>[];
   thumbnail_url?: string;
   task_error?: { message?: string };
+}
+
+/**
+ * Every format Meshy produced for a task, plus its texture maps. These come
+ * from the job that was already paid for, so fetching them costs nothing —
+ * FBX for Unity is the same model as the GLB, in a different container.
+ */
+export interface MeshyTaskAssets {
+  models: { format: string; url: string }[];
+  /** e.g. base_color, metallic, normal, roughness. */
+  textures: { name: string; url: string }[];
+}
+
+/** One job this key has run, as listed by the provider. */
+export interface ProviderJob {
+  taskId: string;
+  prompt: string;
+  status: string;
+  succeeded: boolean;
+  createdAt: number;
+  thumbnailUrl?: string;
+  source: 'text' | 'image';
+}
+
+interface MeshyListRow {
+  id?: string;
+  prompt?: string;
+  status?: string;
+  created_at?: number | string;
+  thumbnail_url?: string;
+}
+
+const rows = (payload: unknown): MeshyListRow[] => {
+  if (Array.isArray(payload)) return payload as MeshyListRow[];
+  const obj = payload as { result?: unknown; data?: unknown };
+  if (Array.isArray(obj?.result)) return obj.result as MeshyListRow[];
+  if (Array.isArray(obj?.data)) return obj.data as MeshyListRow[];
+  return [];
+};
+
+/**
+ * Everything this key has generated, newest first.
+ *
+ * Jobs run through the API do not appear in Meshy's web workspace, so without
+ * this a model you paid for and lost track of is effectively invisible. Listing
+ * them means a job whose download failed can still be pulled into the library
+ * without spending anything more.
+ */
+export async function listRecentJobs(key: string, limit = 20): Promise<ProviderJob[]> {
+  const query = `?page_num=1&page_size=${limit}&sort_by=-created_at`;
+
+  const load = async (path: string, source: 'text' | 'image'): Promise<ProviderJob[]> => {
+    try {
+      const payload = await requestJson<unknown>(
+        `${BASE}/${path}${query}`,
+        { headers: auth(key) },
+        'Meshy job list',
+      );
+      return rows(payload)
+        .filter((r) => r.id)
+        .map((r) => {
+          const status = String(r.status ?? '').toUpperCase();
+          return {
+            taskId: source === 'image' ? 'img:' + r.id : String(r.id),
+            prompt: r.prompt?.trim() || '(no prompt)',
+            status: status.toLowerCase() || 'unknown',
+            succeeded: status === 'SUCCEEDED',
+            createdAt:
+              typeof r.created_at === 'number'
+                ? r.created_at
+                : Date.parse(String(r.created_at ?? '')) || 0,
+            thumbnailUrl: r.thumbnail_url,
+            source,
+          };
+        });
+    } catch {
+      // One endpoint being unavailable should not hide the other's jobs.
+      return [];
+    }
+  };
+
+  const [text, image] = await Promise.all([
+    load('v2/text-to-3d', 'text'),
+    load('v1/image-to-3d', 'image'),
+  ]);
+  return [...text, ...image].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+}
+
+export async function fetchTaskAssets(key: string, taskId: string): Promise<MeshyTaskAssets> {
+  const path = kindOf(taskId) === 'image' ? 'v1/image-to-3d' : 'v2/text-to-3d';
+  const task = await requestJson<MeshyTask>(
+    `${BASE}/${path}/${rawId(taskId)}`,
+    { headers: auth(key) },
+    'Meshy task formats',
+  );
+
+  const models = Object.entries(task.model_urls ?? {})
+    .filter(([, url]) => typeof url === 'string' && url.startsWith('http'))
+    .map(([format, url]) => ({ format, url: url as string }));
+
+  // Meshy returns one object per material, each keyed by map name.
+  const textures: { name: string; url: string }[] = [];
+  (task.texture_urls ?? []).forEach((set, i) => {
+    for (const [name, url] of Object.entries(set)) {
+      if (typeof url !== 'string' || !url.startsWith('http')) continue;
+      const suffix = (task.texture_urls?.length ?? 0) > 1 ? `_${i + 1}` : '';
+      textures.push({ name: `${name}${suffix}`, url });
+    }
+  });
+
+  return { models, textures };
 }
 
 const auth = (key: string) => ({

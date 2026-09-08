@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { COLORS, ENGINES, formatBytes, formatSize, formatTris, readBlob } from '@forge/core';
+import {
+  COLORS,
+  ENGINES,
+  buildExportBundle,
+  exportOptions,
+  formatBytes,
+  formatSize,
+  formatTris,
+  isBundled,
+  readBlob,
+} from '@forge/core';
+import type { ExportFormat } from '@forge/core';
 import { Chip, SectionLabel, mono } from '@forge/ui';
 import type { Session } from '../session.js';
 import { canRevealFiles, saveModel, showInFolder } from '../files.js';
@@ -18,22 +29,45 @@ export function ExportDrawer({ s }: { s: Session }) {
   );
   const [busy, setBusy] = useState(false);
   const [savedTo, setSavedTo] = useState<string | null>(null);
+  const [format, setFormat] = useState<ExportFormat>('glb');
+  const [progress, setProgress] = useState<string | null>(null);
   if (!a || !v) return null;
 
   const engine = ENGINES[engineIdx];
   const approved = a.clips.filter((c) => c.status === 'approved').map((c) => c.name);
   const unreviewed = a.clips.filter((c) => c.status !== 'approved').length;
 
+  const options = exportOptions(v);
+  const chosen = options.find((o) => o.format === format) ?? options[0];
+
   const exportModel = async () => {
-    if (!v.fileId) {
-      s.say('This version has no model file cached on this computer.');
-      return;
-    }
     setBusy(true);
+    setSavedTo(null);
     try {
-      const blob = await readBlob(s.blobs, v.fileId);
-      if (!blob) throw new Error('Could not read the model file');
-      const { path } = await saveModel(blob, `${a.name}_${v.label}.glb`);
+      let blob: Blob | null;
+      let filename: string;
+
+      if (isBundled(format)) {
+        // FBX and OBJ come from the provider, not from the stored GLB.
+        if (!v.taskId || !s.credentials.apiKey) {
+          throw new Error('This version has no Meshy task behind it to fetch other formats from.');
+        }
+        blob = await buildExportBundle({
+          apiKey: s.credentials.apiKey,
+          taskId: v.taskId,
+          format: format as 'fbx' | 'obj',
+          name: `${a.name}_${v.label}`,
+          onProgress: (p) => setProgress(p.label),
+        });
+        filename = `${a.name}_${v.label}_${format}.zip`;
+      } else {
+        if (!v.fileId) throw new Error('This version has no model file cached on this computer.');
+        blob = await readBlob(s.blobs, v.fileId);
+        if (!blob) throw new Error('Could not read the model file');
+        filename = `${a.name}_${v.label}.glb`;
+      }
+
+      const { path } = await saveModel(blob, filename);
       if (path) {
         setSavedTo(path);
         s.say(`Saved to ${path}`);
@@ -41,6 +75,7 @@ export function ExportDrawer({ s }: { s: Session }) {
     } catch (e) {
       s.say(e instanceof Error ? e.message : 'Could not export the model');
     } finally {
+      setProgress(null);
       setBusy(false);
     }
   };
@@ -78,6 +113,23 @@ export function ExportDrawer({ s }: { s: Session }) {
           </button>
         </div>
 
+        <SectionLabel style={{ marginBottom: 8 }}>Format</SectionLabel>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {options.map((o) => (
+            <Chip
+              key={o.format}
+              label={o.label}
+              on={o.format === format}
+              onClick={() => o.available && setFormat(o.format)}
+              style={o.available ? undefined : { opacity: 0.45, cursor: 'not-allowed' }}
+              title={o.note}
+            />
+          ))}
+        </div>
+        <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 16px' }}>
+          {chosen.note}
+        </p>
+
         <SectionLabel style={{ marginBottom: 8 }}>Target engine</SectionLabel>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
           {ENGINES.map((e, i) => (
@@ -94,7 +146,7 @@ export function ExportDrawer({ s }: { s: Session }) {
         </div>
 
         {[
-          ['File you get', 'GLB'],
+          ['File you get', isBundled(format) ? `${format.toUpperCase()} + textures (.zip)` : 'GLB'],
           [`${engine.name} expects`, engine.format],
           ['Axis · units', engine.axis],
           ['Triangles', formatTris(v.stats.triangles)],
@@ -120,12 +172,21 @@ export function ExportDrawer({ s }: { s: Session }) {
           </div>
         ))}
 
-        {engine.format !== 'GLB' && engine.format !== 'GLB + PNG' && (
+        {engine.format.startsWith('FBX') && format !== 'fbx' && (
           <p style={{ fontSize: 11, color: A, lineHeight: 1.6, marginTop: 14 }}>
-            {engine.name} prefers {engine.format}. Forge exports the GLB as it is — convert it in
-            your engine, or in Blender, before importing.
+            {engine.name} prefers FBX. Pick <strong>FBX + textures</strong> above and Forge fetches
+            the FBX Meshy already built for this model — no conversion, no extra credits.
           </p>
         )}
+        {!engine.format.startsWith('FBX') &&
+          engine.format !== 'GLB' &&
+          engine.format !== 'GLB + PNG' &&
+          !isBundled(format) && (
+            <p style={{ fontSize: 11, color: A, lineHeight: 1.6, marginTop: 14 }}>
+              {engine.name} prefers {engine.format}. Forge exports what the provider built — convert
+              it in your engine, or in Blender, before importing.
+            </p>
+          )}
 
         {unreviewed > 0 && (
           <p style={{ fontSize: 11, color: A, lineHeight: 1.6, marginTop: 10 }}>
@@ -137,21 +198,25 @@ export function ExportDrawer({ s }: { s: Session }) {
         <button
           type="button"
           onClick={() => void exportModel()}
-          disabled={busy || !v.fileId}
+          disabled={busy || !chosen.available}
           style={{
             width: '100%',
             marginTop: 18,
             padding: '10px 0',
             borderRadius: 6,
             border: 'none',
-            background: v.fileId ? A : COLORS.control,
-            color: v.fileId ? COLORS.ink : COLORS.muted,
+            background: chosen.available ? A : COLORS.control,
+            color: chosen.available ? COLORS.ink : COLORS.muted,
             fontWeight: 600,
             fontSize: 12,
             cursor: 'pointer',
           }}
         >
-          {busy ? 'Preparing…' : `Save ${a.name}_${v.label}.glb…`}
+          {busy
+            ? (progress ?? 'Preparing…')
+            : isBundled(format)
+              ? `Save ${a.name}_${v.label}_${format}.zip…`
+              : `Save ${a.name}_${v.label}.glb…`}
         </button>
 
         {savedTo && (
