@@ -286,12 +286,14 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Tauri notarises automatically when all three are present, which is
-          # what stops macOS prompting at all. Absent, the build is still
-          # signed, just not notarised.
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Deliberately not named APPLE_*: an absent secret comes through as an
+          # empty string rather than being unset, and Tauri treats the mere
+          # presence of these as "notarise this", then fails on the blank team
+          # id. They are only promoted to the real names once all three have a
+          # value.
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           if [ "${{ steps.updater_key.outputs.source }}" = "secret" ]; then
@@ -301,6 +303,14 @@ jobs:
           fi
           if [ "${{ runner.os }}" = "macOS" ] && [ -n "${{ steps.apple.outputs.identity }}" ]; then
             export APPLE_SIGNING_IDENTITY='${{ steps.apple.outputs.identity }}'
+          fi
+          if [ -n "${NOTARY_APPLE_ID:-}" ] && [ -n "${NOTARY_PASSWORD:-}" ] && [ -n "${NOTARY_TEAM_ID:-}" ]; then
+            echo "Notarising with Apple."
+            export APPLE_ID="$NOTARY_APPLE_ID"
+            export APPLE_PASSWORD="$NOTARY_PASSWORD"
+            export APPLE_TEAM_ID="$NOTARY_TEAM_ID"
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            echo "::warning::Not notarising — set APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID to remove the macOS first-launch prompt."
           fi
           npx tauri build
 
@@ -410,6 +420,17 @@ jobs:
             exit 1
           fi
 
+          # A desktop leg can fail without holding the APK back, but the result
+          # must not be a silently platform-less release: the updater would then
+          # tell that platform there is no update at all.
+          MISSING=""
+          ls release | grep -q '\.dmg$'        || MISSING="${MISSING} macOS"
+          ls release | grep -q -- '-setup\.exe$' || MISSING="${MISSING} Windows"
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Desktop build missing for:${MISSING}"
+          fi
+          echo "missing_desktop=${MISSING# }" >> "$GITHUB_OUTPUT"
+
       # One manifest per app: latest.json for Android, updater.json for the
       # Tauri desktop updater. Both live at a `releases/latest/download/` URL
       # that always points at the newest release.
@@ -450,6 +471,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
           VERSION_CODE: ${{ needs.version.outputs.version_code }}
+          MISSING_DESKTOP: ${{ steps.stage.outputs.missing_desktop }}
         run: |
           cat > release-notes.md <<EOF
           ## Forge ${VERSION}
@@ -465,6 +487,7 @@ jobs:
 
           ### Desktop
           macOS \`.dmg\` and Windows \`.msi\` / \`-setup.exe\` are attached when those builds succeed.
+          ${MISSING_DESKTOP:+> **This release has no ${MISSING_DESKTOP} build** — that build failed. Stay on the previous release for it.}
 
           **First launch on macOS.** These builds are signed but not notarised by Apple, so the
           first open is blocked. Drag Forge to Applications, then either right-click it and choose

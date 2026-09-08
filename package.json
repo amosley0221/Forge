@@ -1,7 +1,7 @@
 {
   "name": "forge",
   "private": true,
-  "version": "0.5.10",
+  "version": "0.5.11",
   "description": "Forge — AI 3D game asset studio (desktop + Android)",
   "workspaces": [
     "packages/*",
