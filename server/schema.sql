@@ -10,7 +10,8 @@ create extension if not exists "pgcrypto";
 
 create type device_kind as enum ('desktop', 'android');
 create type clip_status as enum ('approved', 'review', 'rework');
-create type job_stage   as enum ('understanding', 'shape', 'retopo_uv', 'texturing', 'checks');
+-- Mirrors GenerationEvent['phase'] in packages/core/src/generation.ts.
+create type job_phase   as enum ('submitting', 'generating', 'downloading', 'importing');
 create type job_state   as enum ('queued', 'running', 'done', 'failed');
 
 create table projects (
@@ -46,8 +47,8 @@ create table assets (
   name        text not null,
   category    text not null,
   kind        text not null,
-  variant     int  not null default 0,
   device      device_kind not null,
+  created_at  timestamptz not null default now(),
   cur         int  not null default 0,        -- index of the displayed version
   updated_at  timestamptz not null default now()
 );
@@ -60,21 +61,27 @@ create table asset_versions (
   asset_id    text not null references assets (id) on delete cascade,
   idx         int  not null,
   label       text not null,                  -- v1, v2, …
-  tris        text not null,
-  mats        int  not null default 1,
   note        text not null,
-  size        text not null,
   prompt      text not null,
   device      device_kind not null,
-  file_url    text,
-  created_at  timestamptz not null default now(),
+  -- Measured from the GLB when it was stored, never estimated.
+  triangles     int    not null default 0,
+  materials     int    not null default 0,
+  size_meters   numeric(10,3) not null default 0,
+  bytes         bigint not null default 0,
+  clip_names    text[] not null default '{}',
+  file_url      text,
+  provider      text,                         -- meshy | tripo
+  provider_task text,                         -- the task this model came from
+  rigged_task   text,                         -- set once rigged, so clips can be baked
+  created_at    timestamptz not null default now(),
   unique (asset_id, idx)
 );
 
 create table asset_clips (
   id          uuid primary key default gen_random_uuid(),
   asset_id    text not null references assets (id) on delete cascade,
-  name        text not null,                  -- idle | walk | run | drive | attack | hurt | spin
+  name        text not null,                  -- the animation track's own name in the GLB
   status      clip_status not null default 'review',
   clip_url    text,
   updated_at  timestamptz not null default now(),
@@ -85,12 +92,12 @@ create table jobs (
   id          uuid primary key default gen_random_uuid(),
   project_id  uuid not null references projects (id) on delete cascade,
   asset_id    text references assets (id) on delete cascade,
-  kind        text not null,                  -- generate_mesh | generate_clip | retopologize | …
+  kind        text not null,                  -- text_to_3d | image_to_3d | rig | animate
   state       job_state not null default 'queued',
-  stage       job_stage not null default 'understanding',
+  phase       job_phase not null default 'submitting',
   percent     int  not null default 0,
-  request     jsonb not null,                 -- the AgentRequest as submitted
-  result      jsonb,                          -- the AgentResponse
+  request     jsonb not null,                 -- prompt, style, budget, source image
+  result      jsonb,                          -- provider task id and model URL
   error       text,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()

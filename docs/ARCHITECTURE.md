@@ -11,31 +11,32 @@
                      │  ForgeViewer, useForge │
                      └───────────┬────────────┘
                                  │ packages/core
-                       types · tokens · copy · store · agent client
+                types · tokens · copy · store · provider clients
                                  │
                      ┌───────────┴────────────┐
                      │  SyncTransport         │
                      │  local  |  remote      │
                      └───────────┬────────────┘
                                  │
-                        server (Postgres + jobs + agent)
+       Meshy / Tripo (your key)   ·   server (schema only, not deployed)
 ```
 
-Both apps import the same model and the same mutations. The only thing that differs
-is which surfaces exist: the desktop has the six editor modes, the LOD chain and the
-export drawer; the phone has capture, review and hand-off.
+Both apps import the same model and the same mutations. What differs is which
+surfaces exist: the desktop has the editor and the export drawer; the phone has
+camera capture and review.
 
 ## State and sync
 
 `useForge` (packages/ui) owns the asset list and every mutation that can change it:
-`newAsset`, `addVersion`, `undoLast`, `setClipStatus`, `selectVersion`. It writes
-through a `SyncTransport`:
+`generate`, `importModel`, `rig`, `addClip`, `undoLast`, `setClipStatus`,
+`selectVersion`, `removeAsset`. It writes through a `SyncTransport`:
 
 - **local** — `localStorage` + `BroadcastChannel`. Works offline, and makes two
   browser tabs behave like two devices.
 - **remote** — same writes, mirrored locally first, pushed to the API, with remote
   changes arriving over SSE. Failed writes queue in `forge.queue.v1` and replay in
-  order on reconnect.
+  order on reconnect. No backend is deployed, so the apps run on the local transport
+  and never claim to be synced to a cloud.
 
 Rules that hold everywhere:
 
@@ -43,52 +44,50 @@ Rules that hold everywhere:
   exists.
 - **Conflicts never overwrite.** Two devices editing the same asset produce sibling
   versions.
-- The sync pill shows *Syncing…* (accent) for at least 900 ms before *Synced* (green),
-  so a fast round trip still reads as a state change.
 - A remote change from the *other* device raises a toast naming what happened.
+- Model files live outside the synced state: IndexedDB on desktop, real files in the
+  app data directory on Android, addressed by `fileId`.
 
 ## Viewport
 
 `packages/ui/src/viewer/engine.ts` is a plain three.js scene wrapped by
-`<ForgeViewer>`. It rebuilds geometry only when something structural changes (kind,
-version, variant, wireframe, selection), so switching clips or scrubbing speed never
-restarts the scene. Clicking a mesh emits its `part` name, which scopes the next
-prompt (`@tail` instead of `@whole model`).
+`<ForgeViewer>`. It reloads only when the model URL changes, so switching clips or
+scrubbing speed never restarts the scene. Clicking a mesh emits its name, which
+scopes the next prompt.
 
-Meshes are procedural stand-ins. The seam is `ViewerEngine.build()`: give it a
-`GLTFLoader` and keep the part names, and picking, highlighting, wireframe and the
-clip playback above it keep working unchanged.
+The engine loads real GLBs with `GLTFLoader` and plays the file's own animation
+tracks through an `AnimationMixer`. Loading and failure are surfaced to the UI rather
+than swallowed, so a file that will not open says why.
 
-## Prompt routing
+## Generation
 
-One entry point handles every prompt (`submitPrompt` in each app's session):
+`useForge().generate()` is the only path that creates an asset from a prompt, and
+`importModel()` the only path that creates one from a file. Both end the same way:
+the GLB is written to the app's `BlobStore`, read back, and measured with
+`readMeshStats()` — triangles, materials, bounding box, animation track names and
+byte size. Those measurements are what the UI shows; nothing is estimated.
 
-1. A motion verb (`walk`, `run`, `drive`, `attack`, `hurt`, `spin`) → generate a clip,
-   switch to Animate, mark it `review`.
-2. A prompt while a clip is under review → re-run that clip with the note.
-3. Anything else → a new version, scoped to the selected part when there is one.
-4. On the start screen → a new asset in the selected category.
+`runGeneration()` (packages/core) submits to the provider and polls its task status
+until it succeeds or fails. The percentage in the overlay is the provider's own
+progress value, weighted across submit → generate → download → import. There is no
+timer. Cancelling aborts the poll and the download.
 
-`matchAnimWord` (packages/core) is the shared matcher, so the phone and the desktop
-route the same sentence the same way.
+Rigging and motion live in `providers/meshy-rig.ts`: `rigModel()` turns a completed
+Meshy task into a skeleton, `animateModel()` bakes one named action onto it. Each
+result lands as a new version, and a freshly baked clip is marked `review` so it has
+to be watched before it counts as approved.
 
-## Agent contract
+## Providers
 
-Requests are `{ projectId, assetId?, selectedPart?, mode, prompt, attachments,
-defaults }`. The server plans tool calls — `generate_mesh`, `edit_region`,
-`detect_subjects`, `image_to_mesh`, `read_sprite_sheet`, `sheet_to_mesh`, `auto_rig`,
-`generate_clip`, `retopologize`, `bake_textures`, `generate_lods`, `run_checks`,
-`export` — and streams progress as `understanding → shape → retopo_uv → texturing →
-checks`, 0–100.
+`GenerationProvider` (packages/core/src/providers/types.ts) is the whole contract:
+`validateKey`, `textTo3D`, `imageTo3D`, `status`. Meshy and Tripo implement it. Keys
+are supplied by the user and held by each app's `SecretStore` — the OS keychain via
+Tauri on desktop, app-private preferences on Android.
 
-It answers with a reply of at most two sentences that names the parts it touched and
-offers a next step, plus either a new version, a new clip, or a `question` with
-options — which the clients render as the "Which one should become the asset?" UI.
-
-Types and the client are in `packages/core/src/agent.ts`; the tables the jobs write to
-are in `server/schema.sql`. Provider keys stay server-side. Under bring-your-own-key
-on desktop they live in the OS keychain via the Tauri commands in
-`apps/desktop/src-tauri/src/main.rs` and are never synced.
+Provider calls go out from the WebView, so CORS matters: Android routes them through
+the CapacitorHttp plugin's native networking, and the packaged desktop app through
+the Tauri shell. In a plain browser they are blocked, and `requestJson` says exactly
+that instead of reporting a generic failure.
 
 ## Packaging
 

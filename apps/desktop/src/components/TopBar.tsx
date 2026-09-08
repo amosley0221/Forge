@@ -1,13 +1,13 @@
-import { COLORS, MODES } from '@forge/core';
-import { SyncPill, mono } from '@forge/ui';
-import { useSessionCtx } from '../session.js';
+import { COLORS } from '@forge/core';
+import { mono } from '@forge/ui';
+import type { Session } from '../session.js';
 import { closeWindow, minimizeWindow, toggleMaximizeWindow } from '../windowControls.js';
 
 const A = COLORS.accent;
 
-/** 44px window chrome: traffic lights, breadcrumb, mode control, sync, account. */
-export function TopBar({ batch }: { batch?: { done: number; total: number } | null }) {
-  const s = useSessionCtx();
+/** 44px window chrome. The window is borderless, so these buttons are the only
+ *  way to close it — they call the Tauri window API. */
+export function TopBar({ s }: { s: Session }) {
   const inEditor = s.screen === 'editor';
 
   return (
@@ -70,10 +70,11 @@ export function TopBar({ batch }: { batch?: { done: number; total: number } | nu
       </button>
 
       <div style={{ fontFamily: mono, fontSize: 11, color: COLORS.muted }}>
-        / Dustline{inEditor && s.active ? ` / ${s.active.name}` : ''}
+        / {s.settings.projectName || 'project'}
+        {inEditor && s.active ? ` / ${s.active.name}` : ''}
       </div>
 
-      {inEditor && s.curVersion && (
+      {inEditor && s.version && (
         <span
           style={{
             fontFamily: mono,
@@ -84,86 +85,11 @@ export function TopBar({ batch }: { batch?: { done: number; total: number } | nu
             color: A,
           }}
         >
-          {s.curVersion.label}
+          {s.version.label}
         </span>
       )}
 
-      {inEditor && (
-        <div
-          style={{
-            display: 'flex',
-            gap: 2,
-            padding: 2,
-            borderRadius: 6,
-            background: COLORS.surface,
-            border: `1px solid ${COLORS.hairline}`,
-          }}
-        >
-          {MODES.map((m) => {
-            const on = m === s.mode;
-            return (
-              <button
-                key={m}
-                type="button"
-                onClick={() => {
-                  s.setMode(m);
-                  s.setTool(0);
-                  if (m !== 'Animate') {
-                    s.setAnim('idle');
-                    s.setReviewing(false);
-                  }
-                }}
-                style={{
-                  padding: '5px 11px',
-                  borderRadius: 4,
-                  border: 'none',
-                  background: on ? A : 'transparent',
-                  color: on ? COLORS.ink : COLORS.muted,
-                  fontWeight: on ? 600 : 400,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                }}
-              >
-                {m}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       <div style={{ flex: 1 }} />
-
-      {batch && (
-        <button
-          type="button"
-          onClick={() => s.setModal('sprites')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            padding: '5px 11px',
-            borderRadius: 20,
-            border: `1px solid ${COLORS.accentBorder2}`,
-            background: COLORS.accentTint,
-            color: A,
-            fontSize: 11,
-            fontFamily: mono,
-            cursor: 'pointer',
-          }}
-        >
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: 5,
-              border: `2px solid ${A}`,
-              borderTopColor: 'transparent',
-              animation: 'spin 900ms linear infinite',
-            }}
-          />
-          Batch {batch.done} / {batch.total}
-        </button>
-      )}
 
       {inEditor && (
         <button
@@ -180,43 +106,43 @@ export function TopBar({ batch }: { batch?: { done: number; total: number } | nu
             cursor: 'pointer',
           }}
         >
-          Export ▾
+          Export
         </button>
       )}
 
-      <SyncPill label={s.sync.label} ok={s.sync.ok} />
-
-      <button
-        type="button"
-        onClick={() => s.setDefaults({ ...s.defaults, guide: !s.defaults.guide })}
+      <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 6,
-          padding: '5px 11px',
+          padding: '4px 10px',
           borderRadius: 20,
-          border: `1px solid ${s.defaults.guide ? COLORS.accentBorder2 : COLORS.inputBorder}`,
-          background: 'transparent',
-          color: s.defaults.guide ? A : COLORS.muted,
+          border: `1px solid ${COLORS.hairline}`,
           fontSize: 11,
-          cursor: 'pointer',
+          color: COLORS.text2,
+          whiteSpace: 'nowrap',
         }}
+        title={
+          s.canGenerate
+            ? `Generating through ${s.credentials.provider}`
+            : 'No 3D provider connected'
+        }
       >
         <span
           style={{
             width: 6,
             height: 6,
             borderRadius: 3,
-            background: s.defaults.guide ? A : '#3a3c42',
+            background: s.canGenerate ? COLORS.ok : COLORS.disabled,
           }}
         />
-        Guide
-      </button>
+        {s.canGenerate ? s.credentials.provider : 'no provider'}
+      </div>
 
       <button
         type="button"
-        onClick={() => s.setModal('settings')}
-        title="Settings & account"
+        onClick={() => s.setSettingsOpen(true)}
+        title="Settings"
         style={{
           width: 26,
           height: 26,
@@ -224,12 +150,11 @@ export function TopBar({ batch }: { batch?: { done: number; total: number } | nu
           border: `1px solid ${COLORS.inputBorder}`,
           background: COLORS.raised,
           color: COLORS.text2,
-          fontSize: 10,
-          fontWeight: 600,
+          fontSize: 12,
           cursor: 'pointer',
         }}
       >
-        JD
+        ⚙
       </button>
     </div>
   );

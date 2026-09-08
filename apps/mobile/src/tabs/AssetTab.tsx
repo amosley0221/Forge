@@ -1,24 +1,25 @@
-import { COLORS } from '@forge/core';
-import { ForgeViewer, mono } from '@forge/ui';
+import { useEffect, useState } from 'react';
+import { COLORS, ago, formatSize, formatTris } from '@forge/core';
+import type { MeshyAction } from '@forge/core';
+import { ForgeViewer, StatusTag, mono } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 
 const A = COLORS.accent;
 
 export function AssetTab({ s }: { s: MobileSession }) {
   const a = s.active;
-  const v = s.cur;
-  if (!a || !v) return null;
+  const v = s.version;
+  const [actions, setActions] = useState<MeshyAction[] | null>(null);
+  const [picking, setPicking] = useState(false);
 
-  const anims = a.anims || [];
-  const missing = s.clips.filter((n) => n !== 'idle' && !anims.some((c) => c.name === n));
-  const suggestions = [
-    ...missing.slice(0, 2).map((n) => `Show me it ${n === 'drive' ? 'driving' : n + 'ing'}`),
-    ...(s.kind === 'creature'
-      ? ['Bigger eyes', 'Add a flame tip to the tail']
-      : s.kind === 'vehicle'
-        ? ['Bigger front wheels', 'Add rust']
-        : ['Make it rusty', 'Chunkier silhouette']),
-  ].slice(0, 4);
+  const rigged = a ? [...a.versions].reverse().find((x) => x.riggedTaskId) : undefined;
+
+  useEffect(() => {
+    if (!picking || actions) return;
+    void s.motionActions().then(setActions);
+  }, [picking, actions, s]);
+
+  if (!a || !v) return null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -26,30 +27,18 @@ export function AssetTab({ s }: { s: MobileSession }) {
         <button
           type="button"
           onClick={() => s.setTab('Library')}
-          style={{ background: 'none', border: 'none', color: COLORS.muted, fontSize: 16, cursor: 'pointer', padding: 0 }}
+          aria-label="Back"
+          style={{ background: 'none', border: 'none', color: COLORS.muted, fontSize: 18, cursor: 'pointer', padding: 0 }}
         >
           ‹
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{a.name}</div>
           <div style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>
-            {v.label} · {v.tris} tris · {v.note}
+            {v.label} · {formatTris(v.stats.triangles)} tris · {v.note}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => s.goTab('Export')}
-          style={{
-            padding: '7px 13px',
-            borderRadius: 6,
-            border: 'none',
-            background: COLORS.light,
-            color: COLORS.lightInk,
-            fontWeight: 600,
-            fontSize: 12,
-            cursor: 'pointer',
-          }}
-        >
+        <button type="button" onClick={() => s.goTab('Export')} style={lightBtn}>
           Export
         </button>
       </div>
@@ -66,45 +55,54 @@ export function AssetTab({ s }: { s: MobileSession }) {
           }}
         >
           <ForgeViewer
-            kind={s.kind}
-            version={a.cur + 1}
-            variant={a.variant ?? 0}
+            url={s.modelUrl}
+            clip={s.clip}
             selected={s.selected}
-            anim={s.anim}
-            autorotate={s.anim === 'idle'}
+            autorotate={!s.clip}
             compact
+            emptyMessage="This version has no model file on this device"
             onPick={(part) => s.setSelected(part)}
           />
-          <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 5 }}>
-            {s.clips
-              .filter((n) => n === 'idle' || anims.some((c) => c.name === n))
-              .map((n) => {
-                const on = s.anim === n;
-                const clip = anims.find((c) => c.name === n) ?? { status: 'approved' as const };
+          {a.clips.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 8,
+                left: 8,
+                right: 8,
+                display: 'flex',
+                gap: 5,
+                overflowX: 'auto',
+              }}
+            >
+              {a.clips.map((c) => {
+                const on = s.clip === c.name;
                 return (
                   <button
-                    key={n}
+                    key={c.name}
                     type="button"
                     onClick={() => {
-                      s.setAnim(n);
-                      s.setReviewing(clip.status === 'review');
+                      const next = on ? null : c.name;
+                      s.setClip(next);
+                      s.setReviewing(next != null && c.status === 'review');
                     }}
                     style={{
                       padding: '4px 11px',
                       borderRadius: 20,
                       fontSize: 11,
-                      textTransform: 'capitalize',
-                      border: `1px solid ${on ? A : clip.status === 'review' ? COLORS.accentBorder2 : COLORS.inputBorder}`,
+                      whiteSpace: 'nowrap',
+                      border: `1px solid ${on ? A : c.status === 'review' ? COLORS.accentBorder2 : COLORS.inputBorder}`,
                       background: on ? A : 'rgba(27,28,32,.9)',
-                      color: on ? COLORS.ink : clip.status === 'review' ? A : COLORS.muted,
+                      color: on ? COLORS.ink : c.status === 'review' ? A : COLORS.muted,
                       cursor: 'pointer',
                     }}
                   >
-                    {n}
+                    {c.name}
                   </button>
                 );
               })}
-          </div>
+            </div>
+          )}
           <div
             style={{
               position: 'absolute',
@@ -115,14 +113,40 @@ export function AssetTab({ s }: { s: MobileSession }) {
               color: COLORS.muted,
             }}
           >
-            {s.selected ? `${s.selected} selected` : 'tap a part · drag to orbit'}
+            {s.selected ? `${s.selected} selected` : 'tap a part · drag to orbit · pinch to zoom'}
           </div>
         </div>
 
-        {s.reviewing && s.anim !== 'idle' && (
+        {/* Real numbers, read from the file */}
+        <div style={{ marginTop: 12 }}>
+          {[
+            ['Triangles', formatTris(v.stats.triangles)],
+            ['Materials', String(v.stats.materials)],
+            ['Size', v.stats.sizeMeters ? formatSize(v.stats.sizeMeters) : '—'],
+            ['Clips in file', v.stats.clipNames.length ? v.stats.clipNames.join(' · ') : 'none'],
+            ['Created', ago(v.createdAt)],
+          ].map(([k, val]) => (
+            <div
+              key={k}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 12,
+                padding: '9px 0',
+                fontSize: 12,
+                borderTop: `1px solid ${COLORS.hairline}`,
+              }}
+            >
+              <span style={{ color: COLORS.muted }}>{k}</span>
+              <span style={{ fontFamily: mono, textAlign: 'right' }}>{val}</span>
+            </div>
+          ))}
+        </div>
+
+        {s.reviewing && s.clip && (
           <div
             style={{
-              marginTop: 10,
+              marginTop: 12,
               padding: 12,
               borderRadius: 14,
               background: COLORS.accentTint,
@@ -130,46 +154,26 @@ export function AssetTab({ s }: { s: MobileSession }) {
             }}
           >
             <div style={{ fontSize: 12, marginBottom: 10 }}>
-              Watch the {s.anim} loop. Does it read right?
+              Watch the {s.clip} loop. Does it read right?
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
                 onClick={() => {
-                  s.setClipStatus(a, s.anim, 'approved', `${a.name}: ${s.anim} approved on Android`);
+                  s.setClipStatus(a, s.clip!, 'approved', `${a.name}: ${s.clip} approved`);
                   s.setReviewing(false);
-                  s.setLastReply(`${s.anim} approved. Desktop has it.`);
                 }}
-                style={{
-                  flex: 1,
-                  padding: '11px 0',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: COLORS.ok,
-                  color: COLORS.onOk,
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
+                style={{ ...bigBtn, background: COLORS.ok, color: COLORS.onOk, border: 'none' }}
               >
                 Looks good
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  s.setClipStatus(a, s.anim, 'rework', `${a.name}: ${s.anim} marked for rework on Android`);
-                  s.setLastReply(`Marked ${s.anim} for rework — type what's off below.`);
+                  s.setClipStatus(a, s.clip!, 'rework', `${a.name}: ${s.clip} needs work`);
+                  s.setReviewing(false);
                 }}
-                style={{
-                  flex: 1,
-                  padding: '11px 0',
-                  borderRadius: 8,
-                  border: `1px solid ${COLORS.inputBorder}`,
-                  background: 'transparent',
-                  color: COLORS.text2,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
+                style={bigBtn}
               >
                 Needs work
               </button>
@@ -177,10 +181,42 @@ export function AssetTab({ s }: { s: MobileSession }) {
           </div>
         )}
 
-        {s.lastReply && !s.generating && (
+        {/* Motion */}
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Motion</div>
+          {!s.canRig ? (
+            <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: 0 }}>
+              Rigging and motion clips come from Meshy. Connect a Meshy key in Settings to use them.
+            </p>
+          ) : !v.taskId && !rigged ? (
+            <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: 0 }}>
+              This model was imported rather than generated here, so there is no provider task to
+              rig. Generate a model in Forge to rig and animate it.
+            </p>
+          ) : !rigged ? (
+            <button type="button" onClick={() => void s.rig(a)} style={{ ...bigBtn, width: '100%' }}>
+              Rig this model
+            </button>
+          ) : (
+            <>
+              <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 8px' }}>
+                Rigged. Add a motion clip and it arrives ready for you to review.
+              </p>
+              <button
+                type="button"
+                onClick={() => setPicking(true)}
+                style={{ ...bigBtn, width: '100%' }}
+              >
+                Add a motion clip
+              </button>
+            </>
+          )}
+        </div>
+
+        {s.lastReply && !s.job.running && (
           <div
             style={{
-              marginTop: 10,
+              marginTop: 12,
               padding: 11,
               borderRadius: '14px 14px 14px 4px',
               background: COLORS.accentTint,
@@ -194,65 +230,60 @@ export function AssetTab({ s }: { s: MobileSession }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-          {suggestions.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => s.setPrompt(t)}
-              style={{
-                padding: '8px 13px',
-                borderRadius: 20,
-                border: `1px solid ${COLORS.inputBorder}`,
-                background: 'transparent',
-                color: COLORS.text2,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {a.versions.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '16px 0 0', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.08em', color: COLORS.muted }}>
+              HISTORY
+            </span>
+            {a.versions.map((ver, i) => {
+              const on = i === a.cur;
+              return (
+                <button
+                  key={ver.label}
+                  type="button"
+                  onClick={() => s.selectVersion(a, i)}
+                  title={ver.note}
+                  style={{
+                    padding: '4px 9px',
+                    borderRadius: 5,
+                    border: `1px solid ${on ? A : COLORS.inputBorder}`,
+                    background: 'transparent',
+                    color: on ? A : COLORS.muted,
+                    fontFamily: mono,
+                    fontSize: 10,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {ver.label}
+                  {ver.device === 'android' ? '·A' : ''}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '16px 0 20px' }}>
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 600,
-              letterSpacing: '.08em',
-              color: COLORS.muted,
+        <div style={{ display: 'flex', gap: 8, margin: '16px 0 20px' }}>
+          {a.versions.length > 1 && (
+            <button type="button" onClick={() => s.undoLast(a)} style={{ ...bigBtn, flex: 1 }}>
+              Undo last version
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm(`Delete ${a.name} and all its versions from this device?`)) {
+                void s.removeAsset(a);
+                s.setTab('Library');
+              }
             }}
+            style={{ ...bigBtn, flex: 1, color: COLORS.danger, borderColor: 'rgba(255,95,87,.4)' }}
           >
-            HISTORY
-          </span>
-          {a.versions.map((ver, i) => {
-            const on = i === a.cur;
-            return (
-              <button
-                key={ver.label}
-                type="button"
-                onClick={() => s.selectVersion(a, i)}
-                style={{
-                  padding: '4px 9px',
-                  borderRadius: 5,
-                  border: `1px solid ${on ? A : COLORS.inputBorder}`,
-                  background: 'transparent',
-                  color: on ? A : COLORS.muted,
-                  fontFamily: mono,
-                  fontSize: 10,
-                  cursor: 'pointer',
-                }}
-              >
-                {ver.label}
-                {ver.device === 'android' ? '·A' : ''}
-              </button>
-            );
-          })}
+            Delete
+          </button>
         </div>
       </div>
 
-      {/* Input row */}
+      {/* Prompt row — makes a new version of this asset */}
       <div
         style={{
           display: 'flex',
@@ -263,32 +294,14 @@ export function AssetTab({ s }: { s: MobileSession }) {
           background: COLORS.surface,
         }}
       >
-        <button
-          type="button"
-          onClick={() => s.goTab('Capture')}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 8,
-            border: `1px solid ${COLORS.inputBorder}`,
-            background: 'transparent',
-            color: COLORS.muted,
-            fontFamily: mono,
-            fontSize: 10,
-            cursor: 'pointer',
-          }}
-        >
-          CAM
-        </button>
         <input
           value={s.prompt}
           onChange={(e) => s.setPrompt(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') s.submitPrompt();
+            if (e.key === 'Enter') void s.submitPrompt();
           }}
-          placeholder={
-            s.reviewing ? `What's off about the ${s.anim}?` : 'Describe a change or "show me it walking"'
-          }
+          placeholder={s.canGenerate ? 'Describe a new version…' : 'Connect a provider to generate'}
+          disabled={!s.canGenerate}
           style={{
             flex: 1,
             height: 44,
@@ -302,13 +315,14 @@ export function AssetTab({ s }: { s: MobileSession }) {
         />
         <button
           type="button"
-          onClick={s.submitPrompt}
+          onClick={() => void s.submitPrompt()}
+          aria-label="Generate"
           style={{
             width: 44,
             height: 44,
             borderRadius: 8,
             border: 'none',
-            background: s.prompt.trim() ? A : '#8a5a22',
+            background: s.prompt.trim() && s.canGenerate ? A : '#8a5a22',
             color: COLORS.ink,
             fontSize: 16,
             cursor: 'pointer',
@@ -317,6 +331,98 @@ export function AssetTab({ s }: { s: MobileSession }) {
           →
         </button>
       </div>
+
+      {picking && (
+        <div
+          onClick={() => setPicking(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(13,14,17,.7)',
+            display: 'flex',
+            alignItems: 'flex-end',
+            zIndex: 70,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxHeight: '70vh',
+              overflowY: 'auto',
+              padding: '16px 14px calc(16px + env(safe-area-inset-bottom))',
+              borderRadius: '16px 16px 0 0',
+              background: COLORS.panel,
+              border: `1px solid ${COLORS.panelBorder}`,
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Add a motion clip</div>
+            <p style={{ fontSize: 11, color: COLORS.muted, margin: '0 0 12px' }}>
+              These are the actions your provider offers for a rigged model. Each one uses credits.
+            </p>
+            {actions === null ? (
+              <div style={{ fontSize: 12, color: COLORS.muted, padding: '12px 0' }}>
+                Loading the motion list…
+              </div>
+            ) : actions.length === 0 ? (
+              <div style={{ fontSize: 12, color: COLORS.muted, padding: '12px 0', lineHeight: 1.6 }}>
+                Your provider did not return any actions. Check the key in Settings, or that your
+                plan includes animation.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {actions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => {
+                      setPicking(false);
+                      void s.addClip(a, action).then((updated) => {
+                        const fresh = updated?.clips.find((c) => c.status === 'review');
+                        if (fresh) {
+                          s.setClip(fresh.name);
+                          s.setReviewing(true);
+                        }
+                      });
+                    }}
+                    style={{ ...bigBtn, width: '100%', textAlign: 'left' }}
+                  >
+                    {action.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {a.clips.some((c) => c.status !== 'approved') && (
+        <div style={{ position: 'absolute', top: 0, right: 0, padding: 6 }}>
+          <StatusTag status="review" />
+        </div>
+      )}
     </div>
   );
 }
+
+const bigBtn = {
+  flex: 1,
+  padding: '11px 14px',
+  borderRadius: 8,
+  border: `1px solid ${COLORS.inputBorder}`,
+  background: 'transparent',
+  color: COLORS.text2,
+  fontSize: 13,
+  cursor: 'pointer',
+} as const;
+
+const lightBtn = {
+  padding: '7px 13px',
+  borderRadius: 6,
+  border: 'none',
+  background: COLORS.light,
+  color: COLORS.lightInk,
+  fontWeight: 600,
+  fontSize: 12,
+  cursor: 'pointer',
+} as const;

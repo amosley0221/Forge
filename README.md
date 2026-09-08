@@ -1,41 +1,98 @@
 # Forge — AI 3D game asset studio
 
-Type a prompt, drop a photo, or hand it a folder of sprite sheets, and Forge builds a
-**rigged, animated, game-ready 3D asset** — creatures, characters, props, vehicles,
-environment kits, weapons. Edit by prompt or by hand across Model / Sculpt / Paint /
-Rig / Animate / LOD, approve the motion clips, and export to Unity, Unreal, Godot,
-Roblox, VRM or raw GLB.
+Describe an object or photograph one, and Forge turns it into a 3D model you can drop
+into your game. Models are generated through **your own** 3D provider account, stored
+on your device, viewed and inspected in a real viewport, and exported as GLB. The
+desktop app (Windows + macOS) and the Android app share one codebase.
 
-One cloud project is shared by the desktop app (Windows + macOS) and the Android
-companion — capture on the phone, finish on the desktop, review animations on
-whichever is in your hand.
+A fresh install starts **empty**. There is no sample content, no demo account, and no
+progress bar that moves on a timer — every number in the UI is measured from a real
+file, and every percentage comes from the provider actually doing the work.
 
 ## Download
 
 Everything ships from the [releases page][releases].
 
-- **Android** — `forge-<version>.apk`. It installs **over** your existing build, so
-  you never uninstall and never lose your project. Already have it? Open Forge and
-  tap **Update** on the Library tab.
-- **macOS** — `.dmg`
-- **Windows** — `.msi` or `-setup.exe`
+- **Android** — `forge-<version>.apk`. It installs **over** your existing build, so you
+  never uninstall and never lose your project. Already have it? Open Forge and tap
+  **Update** on the Library tab.
+- **macOS** — `.dmg` · **Windows** — `.msi` or `-setup.exe`
 
 How that works, and how to swap in your own signing key, is in
 [docs/ANDROID_RELEASE.md](docs/ANDROID_RELEASE.md).
 
+## What you need
+
+Generation runs through a **paid, credit-based 3D provider** that you connect with your
+own API key on first run:
+
+| Provider | Text → 3D | Image → 3D | Rigging | Motion clips |
+| --- | --- | --- | --- | --- |
+| [Meshy](https://www.meshy.ai/api) | ✅ | ✅ | ✅ | ✅ |
+| [Tripo](https://platform.tripo3d.ai/api-keys) | ✅ | ✅ | — | — |
+
+**Without a key the app still works**: import `.glb`/`.gltf` files you already have,
+view and inspect them, play any animation tracks they contain, and export them. The
+UI says exactly which actions need a provider rather than hiding them.
+
+Your key is stored in the OS keychain on desktop and in app-private storage on
+Android. It is never written into project data and never syncs anywhere.
+
+## What each part actually does
+
+Honest inventory, because the design this was built from describes more than a
+provider API can deliver:
+
+**Real**
+
+- **Generate** — text→3D and image→3D through Meshy or Tripo, with progress polled
+  from the provider's own task status.
+- **Photo capture** — the phone camera, then *you* drag a box around the subject; that
+  exact crop of your real photo is what gets sent. No fake object detection.
+- **Rig and animate** — Meshy's rigging and animation endpoints. Clips arrive marked
+  for review; you approve them or send them back.
+- **Viewport** — the actual GLB, via `GLTFLoader`. Orbit, pinch/wheel zoom, click a
+  mesh to select it, wireframe overlay, and playback of the file's own animation
+  tracks through an `AnimationMixer`.
+- **Numbers** — triangles, materials, real-world size, file size and clip names are
+  measured from the loaded file, never invented.
+- **Library and versions** — append-only version history with undo, stored on device
+  (IndexedDB on desktop, real files on Android) and mirrored across tabs/devices.
+- **Import and export** — import any `.glb`/`.gltf`; export hands over the real file
+  (Share sheet on Android, download on desktop).
+- **Android release and in-app updates** — signed APK, `latest.json`, install in place.
+
+**Not built**
+
+- **Sculpt, Paint and LOD.** A provider returns a finished mesh; it is not a sculpting
+  engine, a texture painter or an LOD baker. Rather than ship tool rails that do
+  nothing, those modes are absent.
+- **Format conversion.** Export writes the GLB as-is. The engine chips tell you what
+  Unity/Unreal/Godot/Roblox expect so you know whether to convert.
+- **Sprite-sheet batches.** `packages/core/src/spritesheet.ts` does real analysis
+  (frame-grid detection from transparent gutters or even division, plus palette
+  extraction) but no provider offers sheet→3D, so it is not wired to a screen.
+- **Cross-device cloud sync.** The store has a server-backed transport with an offline
+  queue (`packages/core/src/store.ts`) and `server/schema.sql` has the schema, but
+  there is no deployed backend — the apps run local-first and say "no provider"
+  rather than implying a cloud that isn't there.
+
+> The Meshy rigging and animation endpoints in `packages/core/src/providers/meshy-rig.ts`
+> are written against Meshy's documented v1 API and parse responses defensively, but
+> they have not been exercised against a live key from this repository. If a response
+> shape has moved, the app surfaces the provider's own error rather than failing
+> silently.
+
 ## Repository layout
 
 ```
-packages/core      types, design tokens, copy, the asset store and its sync transports
-packages/ui        React pieces both apps share — the three.js viewport, useForge, primitives
-apps/desktop       Vite + React UI in a Tauri 2 shell  → .dmg / .msi / -setup.exe
-apps/mobile        Vite + React UI in a Capacitor shell → .apk (plus the update plugin)
-server             Postgres schema and the agent contract the clients expect
+packages/core      types, design tokens, copy, store + sync, provider clients, settings
+packages/ui        React pieces both apps share — the GLB viewport and useForge
+apps/desktop       Vite + React in a Tauri 2 shell  → .dmg / .msi / -setup.exe
+apps/mobile        Vite + React in a Capacitor shell → .apk, plus the update plugin
+server             Postgres schema for the (not yet deployed) sync backend
 docs               release process and architecture notes
 ```
-
-`packages/core` is the single source of truth for the data model, so a change to
-`Asset` lands on both clients at once.
 
 ## Getting started
 
@@ -43,64 +100,32 @@ docs               release process and architecture notes
 npm ci
 npm run build           # core → ui → desktop → mobile
 
-npm run dev:desktop     # http://localhost:1420 in a browser
+npm run dev:desktop     # http://localhost:1420
 npm run dev:mobile      # http://localhost:5173, resize to a phone viewport
 ```
+
+Provider calls are blocked by CORS in a plain browser — generation works in the
+packaged desktop and Android builds, and the error message says so. Importing,
+viewing and exporting work everywhere.
 
 For the native shells:
 
 ```bash
-# desktop — needs the Rust toolchain
-cd apps/desktop && npx tauri dev
-
-# android — needs JDK 17 and the Android SDK
-npm run android:sync
-cd apps/mobile && npx cap open android
+cd apps/desktop && npx tauri dev        # needs the Rust toolchain
+npm run android:sync && cd apps/mobile && npx cap open android   # needs JDK 17 + Android SDK
 ```
-
-Both apps run fully offline against the local store (localStorage +
-`BroadcastChannel`), which is also what keeps two browser tabs in sync so you can see
-the desktop and phone UIs talking to each other. Point them at a server by passing a
-`RemoteConfig` to `useForge` — see `packages/core/src/store.ts`.
-
-## What is real and what is scaffolding
-
-Honest inventory, so nothing here surprises you later:
-
-**Real**
-
-- The complete desktop and Android UIs — every screen, mode, modal and piece of copy
-  from the design handoff.
-- The shared data model, version history (append-only, with undo), clip review
-  states, and the cross-client sync layer with its offline queue.
-- The three.js viewport: orbit, zoom, part picking, wireframe overlay, turntable, and
-  the seven motion clips.
-- The Android build, signing, release and in-app update pipeline, end to end.
-
-**Scaffolding, with the seams marked in code**
-
-- Generated geometry. `packages/ui/src/viewer/engine.ts` builds procedural stand-in
-  meshes; swap `build()` for a `GLTFLoader` once assets carry a real `fileUrl`.
-- The generation jobs themselves. `useForge`'s `runJob` drives the five-stage progress
-  overlay on a timer; `packages/core/src/agent.ts` already defines the client and the
-  stage events the server is expected to emit.
-- Sprite-sheet reading and photo subject detection return the scripted results from
-  the design prototype.
-- The backend. `server/schema.sql` has the tables and RLS the clients assume; there is
-  no deployed API yet, so `useForge` runs on the local transport by default.
 
 ## Design
 
 Accent `#F59E3B` is reserved for AI actions, selection and primary CTAs; success green
-only for approvals and ready states. No other hues. Type is IBM Plex Sans / Mono.
-Tokens live in `packages/core/src/constants.ts` (`COLORS`) and
-`packages/ui/src/tokens.css` — change them in one place.
+only for approvals and ready states. No other hues. IBM Plex Sans / Mono. Tokens live
+in `packages/core/src/constants.ts` (`COLORS`) and `packages/ui/src/tokens.css`.
 
 ## Releasing
 
 ```bash
-npm version 0.4.1 --no-git-tag-version --workspaces --include-workspace-root
-git commit -am "Forge 0.4.1" && git tag v0.4.1 && git push origin main --tags
+npm version 0.5.0 --no-git-tag-version --workspaces --include-workspace-root
+git commit -am "Forge 0.5.0" && git tag v0.5.0 && git push origin main --tags
 ```
 
 The tag triggers the release workflow: signed APK, `latest.json` for the in-app

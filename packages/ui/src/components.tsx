@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { COLORS, STAGES } from '@forge/core';
+import { COLORS } from '@forge/core';
 
 const A = COLORS.accent;
 
@@ -155,17 +155,21 @@ export function Spinner({ size = 16, color = A }: { size?: number; color?: strin
   );
 }
 
-/** The five-stage job overlay, shared by both apps. */
-export function GeneratingOverlay({
-  progress,
-  prompt,
+/**
+ * The job overlay. Label and percentage come from the provider via
+ * `useForge().job` — nothing here advances on a timer.
+ */
+export function JobOverlay({
+  label,
+  percent,
+  onCancel,
   compact,
 }: {
-  progress: number;
-  prompt: string;
+  label: string;
+  percent: number;
+  onCancel?: () => void;
   compact?: boolean;
 }) {
-  const idx = Math.min(4, Math.floor(progress / 20));
   return (
     <div
       style={{
@@ -181,7 +185,7 @@ export function GeneratingOverlay({
     >
       <Panel
         style={{
-          width: compact ? 280 : 380,
+          width: compact ? 300 : 380,
           maxWidth: 'calc(100% - 32px)',
           padding: 20,
           borderRadius: 12,
@@ -190,61 +194,81 @@ export function GeneratingOverlay({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Spinner />
-          <div style={{ fontSize: 13, fontWeight: 500 }}>{STAGES[idx]}…</div>
-          <div style={{ marginLeft: 'auto', fontFamily: mono, fontSize: 11, color: A }}>
-            {Math.round(progress)}%
-          </div>
+          <div style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{label}</div>
+          <div style={{ fontFamily: mono, fontSize: 11, color: A }}>{Math.round(percent)}%</div>
         </div>
         <div
           style={{
             height: 4,
             borderRadius: 2,
             background: COLORS.control,
-            margin: '14px 0',
+            margin: '14px 0 0',
             overflow: 'hidden',
           }}
         >
           <div
             style={{
               height: '100%',
-              width: `${progress}%`,
+              width: `${Math.max(2, percent)}%`,
               background: A,
-              transition: 'width 300ms ease',
+              transition: 'width 400ms ease',
             }}
           />
         </div>
-        {!compact && (
-          <div style={{ display: 'grid', gap: 6 }}>
-            {STAGES.map((name, i) => (
-              <div
-                key={name}
-                style={{
-                  display: 'flex',
-                  gap: 8,
-                  fontSize: 11,
-                  color: i < idx ? COLORS.ok : i === idx ? A : COLORS.muted,
-                }}
-              >
-                <span style={{ fontFamily: mono }}>{i < idx ? '✓' : i === idx ? '●' : '○'}</span>
-                {name}
-              </div>
-            ))}
-          </div>
+        <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.55, margin: '12px 0 0' }}>
+          Generation runs on your provider's servers and can take a few minutes. You can leave this
+          screen — the asset lands in your library when it is done.
+        </p>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              marginTop: 12,
+              width: '100%',
+              padding: '8px 0',
+              borderRadius: 6,
+              border: `1px solid ${COLORS.inputBorder}`,
+              background: 'transparent',
+              color: COLORS.text2,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
         )}
-        <div
-          style={{
-            marginTop: 14,
-            fontSize: 11,
-            fontStyle: 'italic',
-            color: COLORS.muted,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {prompt}
-        </div>
       </Panel>
+    </div>
+  );
+}
+
+/** Shown wherever there is genuinely nothing yet — never filled with samples. */
+export function EmptyState({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 8,
+        padding: '40px 20px',
+        textAlign: 'center',
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
+      <p style={{ fontSize: 12, color: COLORS.muted, lineHeight: 1.6, margin: 0, maxWidth: 380 }}>
+        {body}
+      </p>
+      {action && <div style={{ marginTop: 6 }}>{action}</div>}
     </div>
   );
 }

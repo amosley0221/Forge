@@ -1,149 +1,167 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { COLORS, SUBJECTS } from '@forge/core';
-import { Spinner, mono } from '@forge/ui';
+import { COLORS, cropToDataUrl, decodeImage } from '@forge/core';
+import { mono } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 
 const A = COLORS.accent;
 
-type Step = 'idle' | 'detecting' | 'ask' | 'chosen';
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 /**
- * Camera capture. The shot is taken with the real camera on device (falling
- * back to a framed placeholder in a browser); subject detection is still
- * scripted until `detect_subjects` is wired to the server.
+ * Photograph an object and turn it into a model. There is no fake object
+ * detection: the user drags a box around the thing they want, and exactly that
+ * crop of their real photo is what gets sent to the provider.
  */
 export function Capture({ s }: { s: MobileSession }) {
-  const [step, setStep] = useState<Step>('idle');
-  const [chosen, setChosen] = useState<number | null>(null);
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [rect, setRect] = useState<Rect>({ x: 0.15, y: 0.2, w: 0.7, h: 0.55 });
   const [note, setNote] = useState('');
-  const [shot, setShot] = useState<string | null>(null);
-
-  const subject = chosen != null ? SUBJECTS[chosen] : null;
-
-  const detect = () => {
-    setStep('detecting');
-    setTimeout(() => setStep('ask'), 1100);
-  };
+  const frame = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ ox: number; oy: number; rect: Rect } | null>(null);
 
   const take = async (source: CameraSource) => {
-    if (Capacitor.getPlatform() === 'web') {
-      detect();
+    if (!Capacitor.isNativePlatform()) {
+      s.say('The camera is available in the installed Android app.');
       return;
     }
     try {
-      const photo = await Camera.getPhoto({
-        quality: 85,
+      const shot = await Camera.getPhoto({
+        quality: 90,
         source,
         resultType: CameraResultType.DataUrl,
         correctOrientation: true,
       });
-      setShot(photo.dataUrl ?? null);
-      detect();
+      if (shot.dataUrl) {
+        setPhoto(shot.dataUrl);
+        setRect({ x: 0.15, y: 0.2, w: 0.7, h: 0.55 });
+      }
     } catch {
-      // The user dismissed the camera — stay where we are.
+      // Dismissed the camera — nothing to do.
     }
   };
 
-  const reset = () => {
-    setStep('idle');
-    setChosen(null);
-    setNote('');
-    setShot(null);
+  const onPointerDown = (e: React.PointerEvent) => {
+    const box = frame.current?.getBoundingClientRect();
+    if (!box) return;
+    drag.current = {
+      ox: (e.clientX - box.left) / box.width,
+      oy: (e.clientY - box.top) / box.height,
+      rect,
+    };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const box = frame.current?.getBoundingClientRect();
+    const d = drag.current;
+    if (!box || !d) return;
+    const dx = (e.clientX - box.left) / box.width - d.ox;
+    const dy = (e.clientY - box.top) / box.height - d.oy;
+    setRect({
+      x: Math.min(Math.max(0, d.rect.x + dx), 1 - d.rect.w),
+      y: Math.min(Math.max(0, d.rect.y + dy), 1 - d.rect.h),
+      w: d.rect.w,
+      h: d.rect.h,
+    });
+  };
+
+  const resize = (delta: number) =>
+    setRect((r) => {
+      const w = Math.min(1, Math.max(0.15, r.w + delta));
+      const h = Math.min(1, Math.max(0.15, r.h + delta));
+      return {
+        w,
+        h,
+        x: Math.min(r.x, 1 - w),
+        y: Math.min(r.y, 1 - h),
+      };
+    });
+
+  const generate = async () => {
+    if (!photo) return;
+    if (!s.canGenerate) {
+      s.say('Connect a 3D provider in Settings to generate.');
+      return;
+    }
+    const image = await decodeImage(await (await fetch(photo)).blob());
+    const w = 'width' in image ? image.width : 0;
+    const h = 'height' in image ? image.height : 0;
+    const dataUrl = await cropToDataUrl(image, {
+      x: rect.x * w,
+      y: rect.y * h,
+      w: rect.w * w,
+      h: rect.h * h,
+    });
+    const asset = await s.generate({
+      prompt: note.trim() || 'object photographed with the phone camera',
+      category: s.category,
+      imageUrl: dataUrl,
+    });
+    if (asset) {
+      setPhoto(null);
+      setNote('');
+      s.open(asset.id);
+    }
   };
 
   return (
     <div style={{ position: 'relative', height: '100%', background: '#0a0b0d' }}>
-      {/* Viewfinder */}
       <div
+        ref={frame}
         style={{
           position: 'absolute',
           inset: 0,
-          background: shot
-            ? `center / cover no-repeat url(${shot})`
+          background: photo
+            ? `center / contain no-repeat url(${photo})`
             : 'linear-gradient(160deg, #23262b 0%, #15171a 55%, #0e1013 100%)',
+          backgroundColor: '#0a0b0d',
         }}
-      />
-      {step === 'idle' && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '12%',
-            right: '12%',
-            top: '22%',
-            bottom: '34%',
-            border: `2px solid ${A}`,
-            borderRadius: 10,
-          }}
-        />
-      )}
+      >
+        {photo && (
+          <div
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={() => (drag.current = null)}
+            style={{
+              position: 'absolute',
+              left: `${rect.x * 100}%`,
+              top: `${rect.y * 100}%`,
+              width: `${rect.w * 100}%`,
+              height: `${rect.h * 100}%`,
+              border: `2px solid ${A}`,
+              borderRadius: 8,
+              background: 'rgba(245,158,59,.08)',
+              touchAction: 'none',
+              cursor: 'move',
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                top: -22,
+                left: 0,
+                padding: '2px 7px',
+                borderRadius: 4,
+                background: A,
+                color: COLORS.ink,
+                fontFamily: mono,
+                fontSize: 9,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              drag to frame the object
+            </span>
+          </div>
+        )}
+      </div>
 
-      {step !== 'idle' && step !== 'detecting' && (
-        <div style={{ position: 'absolute', inset: 0 }}>
-          {SUBJECTS.map((sub, i) => {
-            const on = chosen === i;
-            return (
-              <button
-                key={sub.name}
-                type="button"
-                onClick={() => {
-                  setChosen(i);
-                  setStep('chosen');
-                }}
-                style={{
-                  position: 'absolute',
-                  left: `${sub.x}%`,
-                  top: `${sub.y}%`,
-                  width: `${sub.w}%`,
-                  height: `${sub.h}%`,
-                  border: `1.5px solid ${on ? A : 'rgba(245,158,59,.6)'}`,
-                  background: on ? COLORS.accentTint : 'transparent',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                }}
-              >
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: -20,
-                    left: -1,
-                    padding: '2px 6px',
-                    borderRadius: 4,
-                    fontFamily: mono,
-                    fontSize: 9,
-                    whiteSpace: 'nowrap',
-                    background: on ? A : 'rgba(27,28,32,.95)',
-                    color: on ? COLORS.ink : A,
-                  }}
-                >
-                  {sub.name} · {sub.conf}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {step === 'detecting' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 9,
-            fontSize: 13,
-            color: COLORS.text,
-            background: 'rgba(13,14,17,.55)',
-          }}
-        >
-          <Spinner /> Finding the subject…
-        </div>
-      )}
-
-      {/* Bottom sheet */}
       <div
         style={{
           position: 'absolute',
@@ -154,7 +172,7 @@ export function Capture({ s }: { s: MobileSession }) {
           background: 'linear-gradient(to top, rgba(13,14,17,.98) 60%, transparent)',
         }}
       >
-        {step === 'idle' && (
+        {!photo ? (
           <>
             <div
               style={{
@@ -165,10 +183,11 @@ export function Capture({ s }: { s: MobileSession }) {
                 fontSize: 12,
                 color: COLORS.text2,
                 marginBottom: 14,
+                lineHeight: 1.5,
               }}
             >
-              Fill the frame with one object, on a plain surface if you can. Forge estimates its
-              real-world size from what is around it.
+              Fill the frame with one object on a plain surface. You will draw a box around it
+              before anything is sent anywhere.
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <button type="button" onClick={() => void take(CameraSource.Photos)} style={sideBtn}>
@@ -191,14 +210,10 @@ export function Capture({ s }: { s: MobileSession }) {
               >
                 <span style={{ width: 50, height: 50, borderRadius: 25, background: A }} />
               </button>
-              <button type="button" onClick={() => s.say('Sprite sheets import from desktop')} style={sideBtn}>
-                Sprites
-              </button>
+              <div style={{ width: 74 }} />
             </div>
           </>
-        )}
-
-        {step === 'ask' && (
+        ) : (
           <div
             style={{
               padding: 14,
@@ -207,54 +222,22 @@ export function Capture({ s }: { s: MobileSession }) {
               border: `1px solid ${COLORS.panelBorder}`,
             }}
           >
-            <div style={{ fontSize: 13, marginBottom: 10 }}>
-              I see {SUBJECTS.length} things. Tap the one to turn into an asset.
-            </div>
-            <div style={{ display: 'grid', gap: 6 }}>
-              {SUBJECTS.map((sub, i) => (
-                <button
-                  key={sub.name}
-                  type="button"
-                  onClick={() => {
-                    setChosen(i);
-                    setStep('chosen');
-                  }}
-                  style={rowBtn}
-                >
-                  <span>{sub.name}</span>
-                  <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>
-                    {sub.conf}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <button type="button" onClick={reset} style={{ ...linkBtn, marginTop: 10 }}>
-              Retake
-            </button>
-          </div>
-        )}
-
-        {step === 'chosen' && subject && (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 14,
-              background: COLORS.panel,
-              border: `1px solid ${COLORS.panelBorder}`,
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{subject.name}</div>
-            <div style={{ fontFamily: mono, fontSize: 11, color: COLORS.muted, marginTop: 2 }}>
-              {subject.size}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button type="button" onClick={() => resize(-0.08)} style={smallBtn}>
+                − smaller box
+              </button>
+              <button type="button" onClick={() => resize(0.08)} style={smallBtn}>
+                + bigger box
+              </button>
             </div>
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Anything to adjust?"
+              placeholder="Describe it, if you like — helps the model"
               style={{
                 width: '100%',
                 height: 42,
-                margin: '11px 0',
+                marginBottom: 10,
                 padding: '0 12px',
                 borderRadius: 8,
                 background: COLORS.input,
@@ -264,15 +247,12 @@ export function Capture({ s }: { s: MobileSession }) {
               }}
             />
             <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={reset} style={{ ...rowBtn, justifyContent: 'center', flex: 1 }}>
+              <button type="button" onClick={() => setPhoto(null)} style={{ ...smallBtn, flex: 1 }}>
                 Retake
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  s.createFromCapture(subject, note);
-                  reset();
-                }}
+                onClick={() => void generate()}
                 style={{
                   flex: 2,
                   padding: '12px 0',
@@ -285,7 +265,7 @@ export function Capture({ s }: { s: MobileSession }) {
                   cursor: 'pointer',
                 }}
               >
-                Generate asset
+                Generate from this crop
               </button>
             </div>
           </div>
@@ -305,24 +285,12 @@ const sideBtn = {
   cursor: 'pointer',
 } as const;
 
-const rowBtn = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: '11px 12px',
+const smallBtn = {
+  padding: '10px 12px',
   borderRadius: 8,
   border: `1px solid ${COLORS.inputBorder}`,
   background: 'transparent',
   color: COLORS.text2,
-  fontSize: 13,
-  cursor: 'pointer',
-} as const;
-
-const linkBtn = {
-  background: 'none',
-  border: 'none',
-  color: COLORS.muted,
   fontSize: 12,
   cursor: 'pointer',
-  padding: 0,
 } as const;

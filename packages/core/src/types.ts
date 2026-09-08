@@ -1,7 +1,10 @@
 /**
- * Shared data model. Mirrors the handoff spec (design/forge-store.js) so the
- * desktop app, the Android companion and the server all agree on shapes.
+ * Shared data model. Every number here is measured from a real file — triangle
+ * and material counts and the bounding box come from the generated GLB, and
+ * clip names are the animation tracks the file actually contains.
  */
+
+import type { ProviderId } from './providers/types.js';
 
 export type Category =
   | 'Creature'
@@ -23,25 +26,42 @@ export type Kind =
 
 export type DeviceKind = 'desktop' | 'android';
 
-export type ClipName = 'idle' | 'walk' | 'run' | 'drive' | 'attack' | 'hurt' | 'spin';
-
 export type ClipStatus = 'approved' | 'review' | 'rework';
+
+/** What the mesh is made of, read from the GLB after download. */
+export interface MeshStats {
+  triangles: number;
+  materials: number;
+  /** Largest bounding-box dimension, in metres, as authored. */
+  sizeMeters: number;
+  /** Animation track names found in the file. */
+  clipNames: string[];
+  /** Size of the GLB on disk, in bytes. */
+  bytes: number;
+}
 
 export interface AssetVersion {
   label: string; // v1, v2, …
-  tris: string;
-  mats: number;
   note: string;
-  size: string;
   prompt: string;
   device: DeviceKind;
-  fileUrl?: string;
+  createdAt: number;
+  stats: MeshStats;
+  /** Key into the app's BlobStore, where the GLB is cached on this device. */
+  fileId?: string;
+  /** Provider URL the model was downloaded from. */
+  sourceUrl?: string;
+  provider?: ProviderId;
+  /** Provider task this version came from; rigging needs it as its input. */
+  taskId?: string;
+  /** Set once the model has been rigged, so clips can be baked onto it. */
+  riggedTaskId?: string;
 }
 
 export interface AssetClip {
-  name: ClipName;
+  /** The animation track's own name from the GLB. */
+  name: string;
   status: ClipStatus;
-  clipUrl?: string;
 }
 
 export interface Asset {
@@ -49,13 +69,13 @@ export interface Asset {
   name: string;
   category: Category;
   kind: Kind;
-  variant?: number;
   device: DeviceKind;
+  createdAt: number;
   updatedAt: number;
   /** index of the displayed version */
   cur: number;
   versions: AssetVersion[];
-  anims?: AssetClip[];
+  clips: AssetClip[];
 }
 
 export type EditorMode = 'Model' | 'Sculpt' | 'Paint' | 'Rig' | 'Animate' | 'LOD';
@@ -73,81 +93,10 @@ export interface SyncMeta {
   remote?: boolean;
 }
 
-/* ------------------------------------------------------------------ *
- * Agent contract (server-side). See docs/ARCHITECTURE.md.
- * ------------------------------------------------------------------ */
-
-export type AttachmentType = 'photo' | 'sprite_sheet';
-
-export interface AgentAttachment {
-  type: AttachmentType;
-  url: string;
-}
-
-export interface AgentDefaults {
-  engine: EnginePreset['name'];
-  style: string;
-  triBudget: number;
-  textureSize: number;
-}
-
-export interface AgentRequest {
-  projectId: string;
-  assetId?: string;
-  selectedPart?: string | null;
-  mode: EditorMode;
-  prompt: string;
-  attachments?: AgentAttachment[];
-  defaults: AgentDefaults;
-}
-
-export type JobStage =
-  | 'understanding'
-  | 'shape'
-  | 'retopo_uv'
-  | 'texturing'
-  | 'checks';
-
-export interface JobProgress {
-  jobId: string;
-  stage: JobStage;
-  percent: number;
-}
-
-export interface AgentQuestion {
-  question: string;
-  options: { id: string; label: string; meta?: string }[];
-}
-
-export interface AgentResponse {
-  /** ≤ 2 sentences; names the parts touched and offers a next step. */
-  reply: string;
-  version?: AssetVersion;
-  clip?: AssetClip;
-  question?: AgentQuestion;
-}
-
-export interface DetectedSubject {
-  name: string;
-  bbox: { x: number; y: number; w: number; h: number };
-  confidence: number;
-  sizeEstimate: string;
-  kind: Kind;
-}
-
-export interface SpriteSheetReading {
-  frameSize: string;
-  directions: number;
-  frames: number;
-  cycles: ClipName[];
-  palette: string[];
-  bodyType: 'quadruped' | 'humanoid' | 'generic';
-}
-
-export interface GameReadyChecks {
-  watertight: boolean;
-  uvOverlap: boolean;
-  scale: boolean;
-  boneCount: number;
-  materials: number;
-}
+export const emptyStats = (): MeshStats => ({
+  triangles: 0,
+  materials: 0,
+  sizeMeters: 0,
+  clipNames: [],
+  bytes: 0,
+});

@@ -1,4 +1,4 @@
-import type { Category, ClipName, EditorMode, EnginePreset, Kind } from './types.js';
+import type { Category, EditorMode, EnginePreset, Kind } from './types.js';
 
 /** Design tokens — the only palette either app is allowed to use. */
 export const COLORS = {
@@ -30,9 +30,6 @@ export const COLORS = {
   lightInk: '#16171a',
 } as const;
 
-/** Procedural creature palette variants. */
-export const HUES = ['#d9642b', '#3f9a8c', '#8a6bd6', '#6da34d', '#d6b13f'];
-
 export const CATEGORIES: Category[] = [
   'Creature',
   'Character',
@@ -51,17 +48,6 @@ export const KINDS: Record<Category, Kind> = {
   Environment: 'environment',
   Weapon: 'weapon',
   'Modular kit': 'kit',
-};
-
-/** Which clips each kind of asset can carry. */
-export const ANIMS: Record<Kind, ClipName[]> = {
-  creature: ['idle', 'walk', 'run', 'attack', 'hurt'],
-  character: ['idle', 'walk', 'run', 'attack', 'hurt'],
-  vehicle: ['idle', 'drive'],
-  prop: ['idle', 'spin'],
-  environment: ['idle'],
-  weapon: ['idle', 'spin'],
-  kit: ['idle', 'spin'],
 };
 
 export const MODES: EditorMode[] = ['Model', 'Sculpt', 'Paint', 'Rig', 'Animate', 'LOD'];
@@ -155,61 +141,30 @@ export const ENGINES: EnginePreset[] = [
   { name: 'Raw', format: 'GLB + PNG', axis: 'Y-up · m' },
 ];
 
-export const STAGES = [
-  'Understanding input',
-  'Building shape',
-  'Retopology & UVs',
-  'Texturing',
-  'Rig & game-ready checks',
-];
-
 export const STARTERS = [
   'Fire-type fox creature, chunky proportions, big eyes, toon shading, for a monster-collecting RPG',
   'Rusty six-wheeled desert rover, low-poly, hand-painted, top-down survival game',
   'Modular sandstone wall kit — 3 straight pieces, 1 corner, 1 gate',
 ];
 
-/** Motion verbs that route a prompt to clip generation instead of a new version. */
-export const ANIM_WORDS: Record<string, ClipName> = {
-  walk: 'walk',
-  walking: 'walk',
-  run: 'run',
-  running: 'run',
-  sprint: 'run',
-  drive: 'drive',
-  driving: 'drive',
-  move: 'drive',
-  moving: 'drive',
-  attack: 'attack',
-  attacking: 'attack',
-  bite: 'attack',
-  hurt: 'hurt',
-  hit: 'hurt',
-  spin: 'spin',
-  rotate: 'spin',
-  idle: 'idle',
-  breathe: 'idle',
-};
-
-export const SPRITE_SHEETS = [
-  'embertail',
-  'aquafin',
-  'thornbud',
-  'voltmite',
-  'glacielle',
-  'pyroclaw',
-  'mossback',
-  'sparkit',
-  'dunewing',
-  'tidecoil',
-  'cinderpup',
-  'zephyrix',
-];
-
-/** Placeholder detections used until `detect_subjects` is wired to SAM. */
-export const SUBJECTS = [
-  { name: 'Oil barrel', conf: '94%', x: 18, y: 30, w: 26, h: 48, size: '0.9 m tall', kind: 'prop' as Kind },
-  { name: 'Toolbox', conf: '81%', x: 56, y: 52, w: 24, h: 26, size: '0.5 m wide', kind: 'prop' as Kind },
+/** Motion words that mean "play a clip" rather than "change the model". */
+export const ANIM_WORDS = [
+  'idle',
+  'walk',
+  'walking',
+  'run',
+  'running',
+  'sprint',
+  'drive',
+  'driving',
+  'attack',
+  'attacking',
+  'bite',
+  'hurt',
+  'hit',
+  'spin',
+  'rotate',
+  'breathe',
 ];
 
 export const STYLES = ['toon', 'hand-painted', 'low-poly', 'realistic PBR', 'voxel'];

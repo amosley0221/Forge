@@ -18,6 +18,7 @@
     "android:sync": "npm run build:mobile && npx --workspace @forge/mobile cap sync android"
   },
   "devDependencies": {
+    "playwright": "^1.63.0",
     "typescript": "^5.6.3"
   },
   "engines": {

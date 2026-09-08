@@ -1,7 +1,9 @@
 import { COLORS } from '@forge/core';
-import { GeneratingOverlay, SyncPill, Toast } from '@forge/ui';
+import { JobOverlay, Toast } from '@forge/ui';
 import { useMobileSession } from './session.js';
 import type { Tab } from './session.js';
+import { Onboarding } from './Onboarding.js';
+import { SettingsSheet } from './SettingsSheet.js';
 import { Library } from './tabs/Library.js';
 import { AssetTab } from './tabs/AssetTab.js';
 import { Capture } from './tabs/Capture.js';
@@ -12,6 +14,13 @@ const TABS: Tab[] = ['Library', 'Asset', 'Capture', 'Export'];
 
 export function App() {
   const s = useMobileSession();
+
+  // `onboarded` is null until storage has been read; showing anything before
+  // then would flash the wrong screen on a real first launch.
+  if (s.onboarded === null) {
+    return <div style={{ position: 'absolute', inset: 0, background: COLORS.canvas }} />;
+  }
+  if (!s.onboarded) return <Onboarding s={s} />;
 
   return (
     <div
@@ -25,17 +34,6 @@ export function App() {
         paddingTop: 'env(safe-area-inset-top)',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          padding: '6px 0',
-          borderBottom: `1px solid ${COLORS.hairline}`,
-        }}
-      >
-        <SyncPill label={s.sync.label} ok={s.sync.ok} />
-      </div>
-
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative' }}>
         {s.tab === 'Library' && <Library s={s} />}
         {s.tab === 'Asset' && <AssetTab s={s} />}
@@ -89,7 +87,12 @@ export function App() {
         })}
       </nav>
 
-      {s.generating && <GeneratingOverlay progress={s.progress} prompt={s.activePrompt} compact />}
+      {s.settingsOpen && <SettingsSheet s={s} />}
+
+      {s.job.running && (
+        <JobOverlay label={s.job.label} percent={s.job.percent} onCancel={s.cancelJob} compact />
+      )}
+
       <Toast text={s.toast} />
     </div>
   );

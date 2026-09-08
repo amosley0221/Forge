@@ -1,10 +1,10 @@
-import { CATEGORIES, COLORS, STARTERS, ago, approvedCount, reviewCount } from '@forge/core';
-import { Chip, Panel, SectionLabel, mono } from '@forge/ui';
-import { useSessionCtx } from '../session.js';
+import { useRef } from 'react';
+import { CATEGORIES, COLORS, STARTERS, ago, approvedCount, formatTris, reviewCount } from '@forge/core';
+import { Chip, EmptyState, Panel, SectionLabel, mono } from '@forge/ui';
+import type { Session } from '../session.js';
 
 const A = COLORS.accent;
 
-/** Decorative perspective floor grid behind the start column. */
 function FloorGrid() {
   return (
     <div style={{ position: 'absolute', inset: 0, perspective: 800, overflow: 'hidden' }}>
@@ -28,17 +28,9 @@ function FloorGrid() {
   );
 }
 
-export function Start() {
-  const s = useSessionCtx();
-  const canGenerate = s.prompt.trim().length > 0;
-
-  const filtered = s.assets.filter((x) =>
-    s.filter === 'All'
-      ? true
-      : s.filter === 'Creatures'
-        ? x.kind === 'creature'
-        : (x.anims || []).some((c) => c.status === 'review'),
-  );
+export function Start({ s }: { s: Session }) {
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const canGenerate = s.prompt.trim().length > 0 && s.canGenerate;
 
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
@@ -57,10 +49,42 @@ export function Start() {
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>What do you want to make?</h1>
           <p style={{ margin: '6px 0 0', fontSize: 12, color: COLORS.muted }}>
-            Describe it, drop a photo or a folder of sprite sheets — Forge builds a rigged,
-            animated, game-ready asset.
+            Describe it and Forge generates a 3D model through your provider, or import a{' '}
+            <code>.glb</code> you already have.
           </p>
         </div>
+
+        {!s.canGenerate && (
+          <Panel
+            style={{
+              padding: 12,
+              background: COLORS.accentTint,
+              border: `1px solid ${COLORS.accentBorder}`,
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 600, color: A }}>No 3D provider connected</div>
+            <p style={{ fontSize: 11, color: COLORS.text2, lineHeight: 1.6, margin: '6px 0 10px' }}>
+              Forge generates models through your own Meshy or Tripo account. Add a key to start
+              generating — importing and viewing work without one.
+            </p>
+            <button
+              type="button"
+              onClick={() => s.setSettingsOpen(true)}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 6,
+                border: 'none',
+                background: A,
+                color: COLORS.ink,
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              Connect a provider
+            </button>
+          </Panel>
+        )}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {CATEGORIES.map((c) => (
@@ -76,7 +100,7 @@ export function Start() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                s.submitPrompt();
+                void s.submitPrompt();
               }
             }}
             placeholder={`Describe a ${s.category.toLowerCase()}… e.g. "${STARTERS[0]}"`}
@@ -91,38 +115,16 @@ export function Start() {
             }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-            <button
-              type="button"
-              onClick={() => s.setModal('sprites')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                border: `1px solid ${COLORS.accentBorder2}`,
-                background: COLORS.accentTint,
-                color: A,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              Sprite sheets → 3D
-            </button>
-            <button
-              type="button"
-              onClick={() => s.setModal('photo')}
-              style={secondaryBtn}
-            >
-              Photo
-            </button>
-            <button type="button" onClick={() => s.setModal('camera')} style={secondaryBtn}>
-              Phone camera
+            <button type="button" onClick={() => fileInput.current?.click()} style={secondaryBtn}>
+              Import .glb
             </button>
             <div style={{ flex: 1 }} />
             <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>
-              {s.engine.name} · {s.defaults.style}
+              {s.credentials.provider ?? 'no provider'} · {s.settings.style}
             </span>
             <button
               type="button"
-              onClick={s.submitPrompt}
+              onClick={() => void s.submitPrompt()}
               style={{
                 padding: '7px 16px',
                 borderRadius: 6,
@@ -139,7 +141,7 @@ export function Start() {
           </div>
         </Panel>
 
-        {s.defaults.guide && (
+        {s.settings.guide && s.canGenerate && (
           <Panel
             style={{
               padding: 12,
@@ -165,7 +167,6 @@ export function Start() {
                     fontSize: 11,
                     textAlign: 'left',
                     cursor: 'pointer',
-                    maxWidth: '100%',
                   }}
                 >
                   {t}
@@ -177,106 +178,112 @@ export function Start() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
           <SectionLabel>
-            Your assets&nbsp;&nbsp;{s.assets.length} · synced with Android
+            {s.settings.projectName || 'Your project'} · {s.assets.length}{' '}
+            {s.assets.length === 1 ? 'asset' : 'assets'}
           </SectionLabel>
-          <div style={{ flex: 1 }} />
-          {['All', 'Creatures', 'Needs review'].map((f) => {
-            const on = f === s.filter;
-            return (
-              <button
-                key={f}
-                type="button"
-                onClick={() => s.setFilter(f)}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 20,
-                  border: `1px solid ${on ? A : COLORS.inputBorder}`,
-                  background: 'transparent',
-                  color: on ? A : COLORS.muted,
-                  fontSize: 11,
-                  cursor: 'pointer',
-                }}
-              >
-                {f}
-              </button>
-            );
-          })}
         </div>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-            gap: 10,
-          }}
-        >
-          {filtered.map((x) => {
-            const v = x.versions[x.cur];
-            const rv = reviewCount(x);
-            const ap = approvedCount(x);
-            const isAndroid = x.device === 'android';
-            return (
-              <button
-                key={x.id}
-                type="button"
-                onClick={() => s.openAsset(x.id)}
-                style={{
-                  textAlign: 'left',
-                  padding: 8,
-                  borderRadius: 8,
-                  border: `1px solid ${COLORS.hairline}`,
-                  background: COLORS.panel,
-                  cursor: 'pointer',
-                  color: COLORS.text,
-                }}
-              >
-                <div
+        {s.assets.length === 0 ? (
+          <EmptyState
+            title="Your library is empty"
+            body="Everything you generate or import lands here, with every version kept."
+          />
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+              gap: 10,
+            }}
+          >
+            {s.assets.map((x) => {
+              const v = x.versions[x.cur];
+              const rv = reviewCount(x);
+              const ap = approvedCount(x);
+              const fromAndroid = x.device === 'android';
+              return (
+                <button
+                  key={x.id}
+                  type="button"
+                  onClick={() => s.openAsset(x.id)}
                   style={{
-                    position: 'relative',
-                    height: 70,
-                    borderRadius: 6,
-                    background:
-                      'repeating-linear-gradient(135deg, #22242a, #22242a 8px, #1e2025 8px, #1e2025 16px)',
+                    textAlign: 'left',
+                    padding: 8,
+                    borderRadius: 8,
+                    border: `1px solid ${COLORS.hairline}`,
+                    background: COLORS.panel,
+                    cursor: 'pointer',
+                    color: COLORS.text,
                   }}
                 >
-                  <span
+                  <div
                     style={{
-                      position: 'absolute',
-                      top: 5,
-                      right: 5,
-                      padding: '1px 6px',
-                      borderRadius: 4,
+                      position: 'relative',
+                      height: 70,
+                      borderRadius: 6,
+                      background: COLORS.surface,
+                      border: `1px solid ${COLORS.hairline}`,
+                      display: 'grid',
+                      placeItems: 'center',
                       fontFamily: mono,
                       fontSize: 9,
-                      background: isAndroid ? COLORS.okTint : COLORS.hairline,
-                      color: isAndroid ? COLORS.ok : COLORS.muted,
+                      color: COLORS.disabled,
                     }}
                   >
-                    {x.device}
-                  </span>
-                  {(rv > 0 || ap > 0) && (
+                    {v.stats.triangles ? 'GLB' : 'no mesh'}
                     <span
                       style={{
                         position: 'absolute',
-                        left: 5,
-                        bottom: 5,
+                        top: 5,
+                        right: 5,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        fontFamily: mono,
                         fontSize: 9,
-                        color: rv ? A : COLORS.ok,
+                        background: fromAndroid ? COLORS.okTint : COLORS.hairline,
+                        color: fromAndroid ? COLORS.ok : COLORS.muted,
                       }}
                     >
-                      {rv ? `${rv} clip${rv > 1 ? 's' : ''} to review` : `${ap} clip${ap > 1 ? 's' : ''} ✓`}
+                      {x.device}
                     </span>
-                  )}
-                </div>
-                <div style={{ fontWeight: 500, fontSize: 12, marginTop: 7 }}>{x.name}</div>
-                <div style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted, marginTop: 2 }}>
-                  {v.label} · {v.tris} · {ago(x.updatedAt)}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                    {(rv > 0 || ap > 0) && (
+                      <span
+                        style={{
+                          position: 'absolute',
+                          left: 5,
+                          bottom: 5,
+                          fontSize: 9,
+                          color: rv ? A : COLORS.ok,
+                        }}
+                      >
+                        {rv ? `${rv} to review` : `${ap} clip${ap > 1 ? 's' : ''} ✓`}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontWeight: 500, fontSize: 12, marginTop: 7 }}>{x.name}</div>
+                  <div style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted, marginTop: 2 }}>
+                    {v.label} · {formatTris(v.stats.triangles)} · {ago(x.updatedAt)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+        hidden
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (!file) return;
+          const asset = await s.importModel(file, s.category);
+          if (asset) s.openAsset(asset.id);
+        }}
+      />
     </div>
   );
 }

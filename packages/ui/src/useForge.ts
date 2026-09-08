@@ -1,108 +1,163 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ANIMS,
+  DEFAULT_SETTINGS,
+  appendVersion,
+  clipsFromStats,
   createLocalTransport,
   createRemoteTransport,
-  gerund,
-  randomTris,
-  uid,
+  hasOnboarded,
+  loadProvider,
+  loadSettings,
+  nameFrom,
+  providerById,
+  animateModel,
+  currentVersion,
+  listActions,
+  rigModel,
+  runGeneration,
+  saveProvider,
+  saveSettings,
+  setOnboarded,
 } from '@forge/core';
 import type {
   Asset,
-  AssetClip,
+  MeshyAction,
   AssetVersion,
+  BlobStore,
   Category,
-  ClipName,
   ClipStatus,
   DeviceKind,
-  Kind,
+  GenerationEvent,
+  KeyValueStore,
+  MeshStats,
+  ProjectSettings,
+  ProviderCredentials,
   RemoteConfig,
+  SecretStore,
   SyncMeta,
   SyncTransport,
 } from '@forge/core';
+import { KINDS } from '@forge/core';
+import { readMeshStats } from './viewer/engine.js';
 
 export interface UseForgeOptions {
   device: DeviceKind;
-  /** Omit to run fully local (offline / demo). */
+  store: KeyValueStore;
+  secrets: SecretStore;
+  blobs: BlobStore;
   remote?: RemoteConfig;
-  /** Label shown next to the sync dot, e.g. "Synced · Android". */
-  syncedLabel: string;
 }
 
-export interface NewAssetInput {
-  name: string;
-  category: Category;
-  kind: Kind;
-  variant?: number;
-  tris?: string;
-  mats?: number;
-  note: string;
-  size: string;
-  prompt: string;
-  anims?: AssetClip[];
+export interface JobState {
+  running: boolean;
+  label: string;
+  percent: number;
+  phase: GenerationEvent['phase'] | 'idle';
+  error: string | null;
 }
+
+const IDLE_JOB: JobState = { running: false, label: '', percent: 0, phase: 'idle', error: null };
 
 /**
- * Everything both apps share: the asset list, its sync transport, the
- * generation job runner and the version/clip mutations. Presentation stays in
- * each app; this is the part that must behave identically on both.
+ * Everything both apps share: the library, its sync transport, persisted
+ * settings and provider credentials, and the real generation/import paths.
+ * No demo data is ever inserted — a fresh install starts empty.
  */
-export function useForge({ device, remote, syncedLabel }: UseForgeOptions) {
+export function useForge({ device, store, secrets, blobs, remote }: UseForgeOptions) {
   const transport = useMemo<SyncTransport>(
     () => (remote ? createRemoteTransport(remote) : createLocalTransport()),
-    // A transport owns sockets and listeners; rebuild it only if the target changes.
     [remote?.apiUrl, remote?.projectId, remote?.deviceId],
   );
 
   const [assets, setAssets] = useState<Asset[]>(() => transport.load());
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [settings, setSettingsState] = useState<ProjectSettings>(DEFAULT_SETTINGS);
+  const [credentials, setCredentials] = useState<ProviderCredentials>({ provider: null, apiKey: null });
+  const [onboarded, setOnboardedState] = useState<boolean | null>(null);
+  const [job, setJob] = useState<JobState>(IDLE_JOB);
   const [toast, setToast] = useState('');
-  const [sync, setSync] = useState({ label: syncedLabel, ok: true });
-  const [generating, setGenerating] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [activePrompt, setActivePrompt] = useState('');
+  const [modelUrl, setModelUrl] = useState<string | null>(null);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const jobTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-  const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const abort = useRef<AbortController | null>(null);
   const assetsRef = useRef(assets);
   assetsRef.current = assets;
+
+  /* ---------------------------------------------------------------- */
+  /* Persisted state                                                    */
+  /* ---------------------------------------------------------------- */
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const [s, c, done] = await Promise.all([
+        loadSettings(store),
+        loadProvider(store, secrets),
+        hasOnboarded(store),
+      ]);
+      if (!alive) return;
+      setSettingsState(s);
+      setCredentials(c);
+      setOnboardedState(done);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [store, secrets]);
 
   const say = useCallback((t: string) => {
     setToast(t);
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(''), 2600);
+    toastTimer.current = setTimeout(() => setToast(''), 3200);
   }, []);
 
-  const flashSync = useCallback(() => {
-    setSync({ label: 'Syncing…', ok: false });
-    clearTimeout(syncTimer.current);
-    syncTimer.current = setTimeout(() => setSync({ label: syncedLabel, ok: true }), 900);
-  }, [syncedLabel]);
+  const updateSettings = useCallback(
+    (patch: Partial<ProjectSettings>) => {
+      setSettingsState((prev) => {
+        const next = { ...prev, ...patch };
+        void saveSettings(store, next);
+        return next;
+      });
+    },
+    [store],
+  );
+
+  const connectProvider = useCallback(
+    async (creds: ProviderCredentials) => {
+      await saveProvider(store, secrets, creds);
+      setCredentials(creds);
+    },
+    [store, secrets],
+  );
+
+  const finishOnboarding = useCallback(async () => {
+    await setOnboarded(store);
+    setOnboardedState(true);
+  }, [store]);
+
+  /* ---------------------------------------------------------------- */
+  /* Library                                                            */
+  /* ---------------------------------------------------------------- */
 
   useEffect(() => {
     const off = transport.subscribe((next, meta) => {
       setAssets(next);
-      if (meta?.remote) {
-        flashSync();
-        if (meta.from && meta.from !== device) say(meta.msg || `Update received from ${meta.from}`);
+      if (meta?.remote && meta.from && meta.from !== device) {
+        say(meta.msg || `Update received from ${meta.from}`);
       }
     });
     return () => {
       off();
       clearTimeout(toastTimer.current);
-      clearTimeout(syncTimer.current);
-      clearInterval(jobTimer.current);
     };
-  }, [transport, device, flashSync, say]);
+  }, [transport, device, say]);
 
   const commit = useCallback(
     (next: Asset[], meta: SyncMeta = {}) => {
       setAssets(next);
       transport.save(next, { from: device, ...meta });
-      flashSync();
     },
-    [transport, device, flashSync],
+    [transport, device],
   );
 
   const upsert = useCallback(
@@ -113,96 +168,44 @@ export function useForge({ device, remote, syncedLabel }: UseForgeOptions) {
     [commit],
   );
 
-  const active = useMemo(
-    () => assets.find((a) => a.id === activeId) ?? null,
-    [assets, activeId],
-  );
+  const active = useMemo(() => assets.find((a) => a.id === activeId) ?? null, [assets, activeId]);
+  const version = active?.versions[active.cur] ?? null;
 
-  /**
-   * Drives the five-stage progress overlay. Replace the interval with
-   * `agentClient.watch(jobId, …)` once the server is live; the callback
-   * contract is the same.
-   */
-  const runJob = useCallback((prompt: string, onDone: () => void) => {
-    setGenerating(true);
-    setProgress(0);
-    setActivePrompt(prompt);
-    clearInterval(jobTimer.current);
-    // Progress is tracked in a ref rather than read back from state, so
-    // completion fires exactly once even when React re-invokes updaters.
-    let pct = 0;
-    jobTimer.current = setInterval(() => {
-      pct = Math.min(100, pct + 4 + Math.random() * 6);
-      setProgress(pct);
-      if (pct >= 100) {
-        clearInterval(jobTimer.current);
-        setGenerating(false);
-        onDone();
-      }
-    }, 110);
-  }, []);
+  /** Resolve the current version's cached GLB into a URL the viewer can load. */
+  useEffect(() => {
+    let alive = true;
+    if (!version?.fileId) {
+      setModelUrl(null);
+      return;
+    }
+    void blobs.url(version.fileId).then((url) => {
+      if (alive) setModelUrl(url);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [version?.fileId, blobs]);
 
-  const newAsset = useCallback(
-    (input: NewAssetInput): Asset => {
-      const asset: Asset = {
-        id: uid(),
-        name: input.name,
-        category: input.category,
-        kind: input.kind,
-        variant: input.variant ?? 0,
-        device,
-        updatedAt: Date.now(),
-        cur: 0,
-        anims: input.anims ?? [],
-        versions: [
-          {
-            label: 'v1',
-            tris: input.tris ?? randomTris(),
-            mats: input.mats ?? 2,
-            note: input.note,
-            size: input.size,
-            prompt: input.prompt,
-            device,
-          },
-        ],
-      };
-      upsert(asset, `${asset.name} created on ${device}`);
-      return asset;
+  const removeAsset = useCallback(
+    async (asset: Asset) => {
+      await Promise.all(
+        asset.versions.filter((v) => v.fileId).map((v) => blobs.remove(v.fileId!)),
+      );
+      commit(
+        assetsRef.current.filter((a) => a.id !== asset.id),
+        { msg: `${asset.name} deleted` },
+      );
+      if (activeId === asset.id) setActiveId(null);
     },
-    [device, upsert],
-  );
-
-  const addVersion = useCallback(
-    (asset: Asset, patch: Partial<AssetVersion>, msg?: string) => {
-      const base = asset.versions[asset.cur];
-      const versions = [
-        ...asset.versions,
-        { ...base, ...patch, label: 'v' + (asset.versions.length + 1), device },
-      ];
-      upsert({ ...asset, versions, cur: versions.length - 1 }, msg);
-      return versions;
-    },
-    [device, upsert],
-  );
-
-  const undoLast = useCallback(
-    (asset: Asset) => {
-      if (asset.versions.length < 2) return null;
-      const versions = asset.versions.slice(0, -1);
-      upsert({ ...asset, versions, cur: versions.length - 1 });
-      const label = versions[versions.length - 1].label;
-      say('Reverted to ' + label);
-      return label;
-    },
-    [upsert, say],
+    [blobs, commit, activeId],
   );
 
   const setClipStatus = useCallback(
-    (asset: Asset, name: ClipName, status: ClipStatus, msg?: string) => {
-      const anims = (asset.anims || []).some((c) => c.name === name)
-        ? (asset.anims || []).map((c) => (c.name === name ? { ...c, status } : c))
-        : [...(asset.anims || []), { name, status }];
-      upsert({ ...asset, anims }, msg);
+    (asset: Asset, name: string, status: ClipStatus, msg?: string) => {
+      const clips = asset.clips.some((c) => c.name === name)
+        ? asset.clips.map((c) => (c.name === name ? { ...c, status } : c))
+        : [...asset.clips, { name, status }];
+      upsert({ ...asset, clips }, msg);
     },
     [upsert],
   );
@@ -212,29 +215,380 @@ export function useForge({ device, remote, syncedLabel }: UseForgeOptions) {
     [upsert],
   );
 
-  const clipsFor = useCallback((kind: Kind): ClipName[] => ANIMS[kind] ?? ['idle'], []);
+  const undoLast = useCallback(
+    (asset: Asset) => {
+      if (asset.versions.length < 2) return null;
+      const dropped = asset.versions[asset.versions.length - 1];
+      if (dropped.fileId) void blobs.remove(dropped.fileId);
+      const versions = asset.versions.slice(0, -1);
+      upsert({ ...asset, versions, cur: versions.length - 1 });
+      say('Reverted to ' + versions[versions.length - 1].label);
+      return versions[versions.length - 1].label;
+    },
+    [upsert, say, blobs],
+  );
+
+  /* ---------------------------------------------------------------- */
+  /* Import and generation — the only two ways an asset comes to exist  */
+  /* ---------------------------------------------------------------- */
+
+  const storeModel = useCallback(
+    async (blob: Blob): Promise<{ fileId: string; stats: MeshStats }> => {
+      const fileId = 'm' + Math.random().toString(36).slice(2, 10);
+      await blobs.put(fileId, blob);
+      const url = await blobs.url(fileId);
+      if (!url) throw new Error('Could not read the model back after saving it');
+      const stats = await readMeshStats(url);
+      return { fileId, stats: { ...stats, bytes: blob.size } };
+    },
+    [blobs],
+  );
+
+  /** Import a .glb/.gltf the user already has. Works with no provider key. */
+  const importModel = useCallback(
+    async (file: File, category: Category = 'Prop'): Promise<Asset | null> => {
+      setJob({ running: true, label: `Reading ${file.name}`, percent: 40, phase: 'importing', error: null });
+      try {
+        const { fileId, stats } = await storeModel(file);
+        const asset: Asset = {
+          id: 'a' + Math.random().toString(36).slice(2, 10),
+          name: nameFrom(file.name),
+          category,
+          kind: KINDS[category],
+          device,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          cur: 0,
+          versions: [
+            {
+              label: 'v1',
+              note: `imported from ${file.name}`,
+              prompt: '',
+              device,
+              createdAt: Date.now(),
+              stats,
+              fileId,
+            },
+          ],
+          clips: clipsFromStats(stats),
+        };
+        upsert(asset, `${asset.name} imported on ${device}`);
+        setJob(IDLE_JOB);
+        return asset;
+      } catch (e) {
+        const error = e instanceof Error ? e.message : 'Import failed';
+        setJob({ ...IDLE_JOB, error });
+        say(error);
+        return null;
+      }
+    },
+    [storeModel, device, upsert, say],
+  );
+
+  const cancelJob = useCallback(() => {
+    abort.current?.abort();
+    abort.current = null;
+    setJob(IDLE_JOB);
+  }, []);
+
+  /**
+   * Generate a new asset, or a new version of an existing one, using the
+   * user's provider key. Progress comes from the provider.
+   */
+  const generate = useCallback(
+    async (opts: {
+      prompt: string;
+      category: Category;
+      imageUrl?: string;
+      /** When set, the result becomes a new version of this asset. */
+      target?: Asset;
+      note?: string;
+    }): Promise<Asset | null> => {
+      const provider = providerById(credentials.provider);
+      if (!provider || !credentials.apiKey) {
+        const error = 'Connect a 3D provider in Settings before generating.';
+        setJob({ ...IDLE_JOB, error });
+        say(error);
+        return null;
+      }
+
+      const controller = new AbortController();
+      abort.current = controller;
+      setJob({ running: true, label: 'Starting', percent: 0, phase: 'submitting', error: null });
+
+      try {
+        const result = await runGeneration({
+          provider,
+          apiKey: credentials.apiKey,
+          source: opts.imageUrl ? 'image' : 'text',
+          prompt: opts.prompt,
+          style: settings.style,
+          triBudget:
+            KINDS[opts.category] === 'creature' ? settings.creatureTriBudget : settings.triBudget,
+          imageUrl: opts.imageUrl,
+          signal: controller.signal,
+          onEvent: (e) =>
+            setJob({ running: true, label: e.label, percent: e.percent, phase: e.phase, error: null }),
+        });
+
+        const { fileId, stats } = await storeModel(result.blob);
+
+        if (opts.target) {
+          const next: Omit<AssetVersion, 'label'> = {
+            note: opts.note ?? 'prompt edit',
+            prompt: opts.prompt,
+            device,
+            createdAt: Date.now(),
+            stats,
+            fileId,
+            sourceUrl: result.modelUrl,
+            provider: provider.id,
+            taskId: result.taskId,
+          };
+          const updated = appendVersion(opts.target, next);
+          upsert(
+            { ...updated, clips: mergeClips(updated.clips, stats) },
+            `${updated.name} ${updated.versions[updated.cur].label} created on ${device}`,
+          );
+          setJob(IDLE_JOB);
+          abort.current = null;
+          return updated;
+        }
+
+        const asset: Asset = {
+          id: 'a' + Math.random().toString(36).slice(2, 10),
+          name: nameFrom(opts.prompt || 'asset'),
+          category: opts.category,
+          kind: KINDS[opts.category],
+          device,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          cur: 0,
+          versions: [
+            {
+              label: 'v1',
+              note: opts.imageUrl ? 'generated from image' : 'generated from prompt',
+              prompt: opts.prompt,
+              device,
+              createdAt: Date.now(),
+              stats,
+              fileId,
+              sourceUrl: result.modelUrl,
+              provider: provider.id,
+              taskId: result.taskId,
+            },
+          ],
+          clips: clipsFromStats(stats),
+        };
+        upsert(asset, `${asset.name} created on ${device}`);
+        setJob(IDLE_JOB);
+        abort.current = null;
+        return asset;
+      } catch (e) {
+        abort.current = null;
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          setJob(IDLE_JOB);
+          return null;
+        }
+        const error = e instanceof Error ? e.message : 'Generation failed';
+        setJob({ ...IDLE_JOB, error });
+        say(error);
+        return null;
+      }
+    },
+    [credentials, settings, storeModel, device, upsert, say],
+  );
+
+  /* ---------------------------------------------------------------- */
+  /* Rigging and animation (Meshy)                                      */
+  /* ---------------------------------------------------------------- */
+
+  const requireMeshy = useCallback(() => {
+    if (credentials.provider !== 'meshy' || !credentials.apiKey) {
+      throw new Error('Rigging and animation need a connected Meshy key.');
+    }
+    return credentials.apiKey;
+  }, [credentials]);
+
+  /** Rig the current version so motion clips can be baked onto it. */
+  const rig = useCallback(
+    async (asset: Asset): Promise<Asset | null> => {
+      const controller = new AbortController();
+      abort.current = controller;
+      try {
+        const key = requireMeshy();
+        const version = currentVersion(asset);
+        if (!version.taskId) {
+          throw new Error(
+            'Only models generated by Meshy in this app can be rigged — an imported file has no Meshy task behind it.',
+          );
+        }
+        setJob({ running: true, label: 'Preparing to rig', percent: 0, phase: 'submitting', error: null });
+        const { riggedTaskId, blob } = await rigModel({
+          apiKey: key,
+          inputTaskId: version.taskId,
+          characterHeight: version.stats.sizeMeters || 1.7,
+          signal: controller.signal,
+          onProgress: (p) =>
+            setJob({ running: true, label: p.label, percent: p.percent, phase: 'generating', error: null }),
+        });
+        const { fileId, stats } = await storeModel(blob);
+        const updated = appendVersion(asset, {
+          note: 'rigged',
+          prompt: '',
+          device,
+          createdAt: Date.now(),
+          stats,
+          fileId,
+          provider: 'meshy',
+          taskId: version.taskId,
+          riggedTaskId,
+        });
+        upsert({ ...updated, clips: mergeClips(updated.clips, stats) }, `${asset.name} rigged`);
+        setJob(IDLE_JOB);
+        abort.current = null;
+        return updated;
+      } catch (e) {
+        abort.current = null;
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          setJob(IDLE_JOB);
+          return null;
+        }
+        const error = e instanceof Error ? e.message : 'Rigging failed';
+        setJob({ ...IDLE_JOB, error });
+        say(error);
+        return null;
+      }
+    },
+    [requireMeshy, storeModel, device, upsert, say],
+  );
+
+  /** The motion library the provider offers for a rigged model. */
+  const motionActions = useCallback(async (): Promise<MeshyAction[]> => {
+    try {
+      return await listActions(requireMeshy());
+    } catch (e) {
+      say(e instanceof Error ? e.message : 'Could not load the motion list');
+      return [];
+    }
+  }, [requireMeshy, say]);
+
+  /** Bake one action onto the rigged model; it lands as a new version. */
+  const addClip = useCallback(
+    async (asset: Asset, action: MeshyAction): Promise<Asset | null> => {
+      const controller = new AbortController();
+      abort.current = controller;
+      try {
+        const key = requireMeshy();
+        const rigged = [...asset.versions].reverse().find((v) => v.riggedTaskId);
+        if (!rigged?.riggedTaskId) throw new Error('Rig the model first, then add clips to it.');
+
+        setJob({ running: true, label: `Preparing ${action.name}`, percent: 0, phase: 'submitting', error: null });
+        const blob = await animateModel({
+          apiKey: key,
+          riggedTaskId: rigged.riggedTaskId,
+          actionId: action.id,
+          actionName: action.name,
+          signal: controller.signal,
+          onProgress: (p) =>
+            setJob({ running: true, label: p.label, percent: p.percent, phase: 'generating', error: null }),
+        });
+        const { fileId, stats } = await storeModel(blob);
+        const updated = appendVersion(asset, {
+          note: `clip: ${action.name}`,
+          prompt: '',
+          device,
+          createdAt: Date.now(),
+          stats,
+          fileId,
+          provider: 'meshy',
+          riggedTaskId: rigged.riggedTaskId,
+        });
+        // A freshly baked clip has not been looked at yet.
+        const clips = stats.clipNames.map((name) => {
+          const existing = updated.clips.find((c) => c.name === name);
+          return existing ?? { name, status: 'review' as const };
+        });
+        upsert({ ...updated, clips }, `${asset.name}: ${action.name} clip added`);
+        setJob(IDLE_JOB);
+        abort.current = null;
+        return { ...updated, clips };
+      } catch (e) {
+        abort.current = null;
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          setJob(IDLE_JOB);
+          return null;
+        }
+        const error = e instanceof Error ? e.message : 'Could not add the clip';
+        setJob({ ...IDLE_JOB, error });
+        say(error);
+        return null;
+      }
+    },
+    [requireMeshy, storeModel, device, upsert, say],
+  );
+
+  /** Replace the current version's file in place, e.g. after rigging. */
+  const addVersionFromBlob = useCallback(
+    async (asset: Asset, blob: Blob, note: string, prompt = '') => {
+      const { fileId, stats } = await storeModel(blob);
+      const updated = appendVersion(asset, {
+        note,
+        prompt,
+        device,
+        createdAt: Date.now(),
+        stats,
+        fileId,
+      });
+      upsert({ ...updated, clips: mergeClips(updated.clips, stats) });
+      return updated;
+    },
+    [storeModel, device, upsert],
+  );
 
   return {
+    // library
     assets,
     active,
     activeId,
     setActiveId,
-    clipsFor,
-    commit,
+    version,
+    modelUrl,
     upsert,
-    newAsset,
-    addVersion,
-    undoLast,
+    commit,
+    removeAsset,
     setClipStatus,
     selectVersion,
-    runJob,
-    generating,
-    progress,
-    activePrompt,
+    undoLast,
+    addVersionFromBlob,
+    // work
+    job,
+    generate,
+    importModel,
+    cancelJob,
+    rig,
+    addClip,
+    motionActions,
+    canRig: credentials.provider === 'meshy' && Boolean(credentials.apiKey),
+    // configuration
+    settings,
+    updateSettings,
+    credentials,
+    connectProvider,
+    onboarded,
+    finishOnboarding,
+    blobs,
+    // chrome
     toast,
     say,
-    sync,
+    canGenerate: Boolean(credentials.provider && credentials.apiKey),
     pendingSync: transport.pending?.() ?? 0,
-    gerund,
   };
+}
+
+/** Keep review states for clips that survive, adopt any new ones as approved. */
+function mergeClips(existing: Asset['clips'], stats: MeshStats): Asset['clips'] {
+  return stats.clipNames.map(
+    (name) => existing.find((c) => c.name === name) ?? { name, status: 'approved' as const },
+  );
 }

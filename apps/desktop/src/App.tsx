@@ -1,49 +1,47 @@
 import { COLORS } from '@forge/core';
-import { GeneratingOverlay, Toast } from '@forge/ui';
-import { SessionProvider, useSession } from './session.js';
+import { JobOverlay, Toast } from '@forge/ui';
+import { useSession } from './session.js';
 import { TopBar } from './components/TopBar.js';
+import { Settings } from './components/Settings.js';
+import { ExportDrawer } from './components/ExportDrawer.js';
+import { Onboarding } from './screens/Onboarding.js';
 import { Start } from './screens/Start.js';
 import { Editor } from './screens/Editor.js';
-import { SpritesModal, useSpriteBatch } from './modals/Sprites.js';
-import { PhotoModal } from './modals/Photo.js';
-import { CameraModal } from './modals/Camera.js';
-import { SettingsModal } from './modals/Settings.js';
-import { ExportDrawer } from './modals/ExportDrawer.js';
 
 export function App() {
-  const session = useSession();
-  const batch = useSpriteBatch(session);
-  const batchRunning = batch.queue === 'running';
+  const s = useSession();
+
+  // Nothing renders until persisted state has been read, so a real first
+  // launch never flashes the wrong screen.
+  if (s.onboarded === null) {
+    return <div style={{ position: 'absolute', inset: 0, background: COLORS.canvas }} />;
+  }
+  if (!s.onboarded) return <Onboarding s={s} />;
 
   return (
-    <SessionProvider value={session}>
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          minWidth: 1180,
-          minHeight: 620,
-          background: COLORS.canvas,
-          fontSize: 12,
-          overflow: 'hidden',
-        }}
-      >
-        {session.screen === 'start' ? <Start /> : <Editor />}
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        minWidth: 1180,
+        minHeight: 620,
+        background: COLORS.canvas,
+        fontSize: 12,
+        overflow: 'hidden',
+      }}
+    >
+      {s.screen === 'start' ? <Start s={s} /> : <Editor s={s} />}
 
-        <TopBar batch={batchRunning ? { done: batch.done, total: batch.total } : null} />
+      <TopBar s={s} />
 
-        {session.exportOpen && <ExportDrawer />}
-        {session.modal === 'sprites' && <SpritesModal batch={batch} />}
-        {session.modal === 'photo' && <PhotoModal />}
-        {session.modal === 'camera' && <CameraModal />}
-        {session.modal === 'settings' && <SettingsModal />}
+      {s.exportOpen && <ExportDrawer s={s} />}
+      {s.settingsOpen && <Settings s={s} />}
 
-        {session.generating && (
-          <GeneratingOverlay progress={session.progress} prompt={session.activePrompt} />
-        )}
+      {s.job.running && (
+        <JobOverlay label={s.job.label} percent={s.job.percent} onCancel={s.cancelJob} />
+      )}
 
-        <Toast text={session.toast} />
-      </div>
-    </SessionProvider>
+      <Toast text={s.toast} />
+    </div>
   );
 }

@@ -1,19 +1,12 @@
-import { COLORS, GUIDE, TOOLS } from '@forge/core';
-import { ForgeViewer, Panel, SectionLabel, mono } from '@forge/ui';
-import { useSessionCtx } from '../session.js';
-import { Inspector } from '../panels/Inspector.js';
+import { useEffect, useState } from 'react';
+import { COLORS, ago, formatBytes, formatSize, formatTris } from '@forge/core';
+import type { MeshyAction } from '@forge/core';
+import { ForgeViewer, Panel, SectionLabel, StatusTag, mono } from '@forge/ui';
+import type { Session } from '../session.js';
 
 const A = COLORS.accent;
 
-function HudPill({
-  label,
-  on,
-  onClick,
-}: {
-  label: string;
-  on?: boolean;
-  onClick?: () => void;
-}) {
+function HudPill({ label, on, onClick }: { label: string; on?: boolean; onClick?: () => void }) {
   return (
     <button
       type="button"
@@ -36,45 +29,53 @@ function HudPill({
   );
 }
 
-export function Editor() {
-  const s = useSessionCtx();
-  const a = s.active;
-  const v = s.curVersion;
-  if (!a || !v) return null;
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: 10,
+        padding: '7px 0',
+        fontSize: 12,
+        borderTop: `1px solid ${COLORS.hairline}`,
+      }}
+    >
+      <span style={{ color: COLORS.muted }}>{label}</span>
+      <span style={{ fontFamily: mono, textAlign: 'right' }}>{value}</span>
+    </div>
+  );
+}
 
-  const [guideTitle, guideBody, suggestions] = GUIDE[s.mode];
-  const approved = (a.anims || []).filter((c) => c.status === 'approved').map((c) => c.name);
-  const modeStatus =
-    s.mode === 'Rig'
-      ? s.kind === 'creature'
-        ? '18 bones'
-        : '14 bones'
-      : s.mode === 'LOD'
-        ? '4 LODs'
-        : s.mode === 'Animate'
-          ? `clip: ${s.anim}`
-          : s.mode === 'Paint'
-            ? '2K · base_color'
-            : s.wire
-              ? 'Shaded + wire'
-              : 'Shaded';
+export function Editor({ s }: { s: Session }) {
+  const a = s.active;
+  const v = s.version;
+  const [actions, setActions] = useState<MeshyAction[] | null>(null);
+  const [picking, setPicking] = useState(false);
+
+  const rigged = a ? [...a.versions].reverse().find((x) => x.riggedTaskId) : undefined;
+
+  useEffect(() => {
+    if (!picking || actions) return;
+    void s.motionActions().then(setActions);
+  }, [picking, actions, s]);
+
+  if (!a || !v) return null;
 
   return (
     <>
       <ForgeViewer
-        kind={s.kind}
-        version={a.cur + 1}
-        variant={a.variant ?? 0}
+        url={s.modelUrl}
         wire={s.wire}
         selected={s.selected}
-        autorotate={s.turntable && s.anim === 'idle'}
-        anim={s.anim}
+        autorotate={s.turntable && !s.clip}
+        clip={s.clip}
         speed={s.speed}
+        emptyMessage="This version has no model file cached on this computer"
         onPick={(part) => s.setSelected(part)}
         style={{ position: 'absolute', inset: 0 }}
       />
 
-      {/* Viewport HUD */}
       <div
         style={{
           position: 'absolute',
@@ -86,82 +87,25 @@ export function Editor() {
           zIndex: 20,
         }}
       >
-        <HudPill
-          label={s.wire ? 'Shaded + wire' : 'Shaded'}
-          on={s.wire}
-          onClick={() => s.setWire(!s.wire)}
-        />
+        <HudPill label={s.wire ? 'Shaded + wire' : 'Shaded'} on={s.wire} onClick={() => s.setWire(!s.wire)} />
         <HudPill label="Turntable" on={s.turntable} onClick={() => s.setTurntable(!s.turntable)} />
         <HudPill
           label={
             s.selected
-              ? `${s.selected} selected · prompts apply to it`
+              ? `${s.selected} selected`
               : 'click a part to select · drag to orbit · wheel to zoom'
           }
         />
       </div>
 
-      {/* Left tool rail */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 16,
-          top: 70,
-          display: 'grid',
-          gap: 4,
-          zIndex: 20,
-        }}
-      >
-        {TOOLS[s.mode].map(([abbr, name], i) => {
-          const on = i === s.tool;
-          return (
-            <div key={abbr} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button
-                type="button"
-                onClick={() => s.setTool(i)}
-                title={name}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 6,
-                  border: `1px solid ${on ? A : COLORS.hairline}`,
-                  background: on ? A : COLORS.control,
-                  color: on ? COLORS.ink : COLORS.muted,
-                  fontFamily: mono,
-                  fontSize: 10,
-                  fontWeight: on ? 600 : 400,
-                  cursor: 'pointer',
-                }}
-              >
-                {abbr}
-              </button>
-              {on && (
-                <span
-                  style={{
-                    padding: '4px 9px',
-                    borderRadius: 6,
-                    background: 'rgba(27,28,32,.9)',
-                    border: `1px solid ${COLORS.hairline}`,
-                    fontSize: 11,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {name}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Right column: inspector + guide */}
+      {/* Right column */}
       <div
         style={{
           position: 'absolute',
           right: 16,
           top: 70,
           bottom: 130,
-          width: 260,
+          width: 280,
           display: 'flex',
           flexDirection: 'column',
           gap: 10,
@@ -169,99 +113,192 @@ export function Editor() {
           zIndex: 20,
         }}
       >
-        <Inspector />
-
-        {s.defaults.guide && (
-          <Panel
-            style={{
-              padding: 12,
-              background: COLORS.accentTint,
-              border: `1px solid ${COLORS.accentBorder}`,
-              flexShrink: 0,
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 12,
-                fontWeight: 600,
-                color: A,
-              }}
-            >
-              <span style={{ width: 6, height: 6, borderRadius: 3, background: A }} />
-              {guideTitle}
+        <Panel style={{ padding: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {s.selected ? `${a.name} › ${s.selected}` : a.name}
             </div>
-            <p style={{ margin: '8px 0 10px', fontSize: 11, lineHeight: 1.55, color: COLORS.text2 }}>
-              {guideBody}
+            <div style={{ fontSize: 11, color: COLORS.muted }}>{v.label}</div>
+          </div>
+
+          <Field label="Triangles" value={formatTris(v.stats.triangles)} />
+          <Field label="Materials" value={String(v.stats.materials)} />
+          <Field label="Real-world size" value={v.stats.sizeMeters ? formatSize(v.stats.sizeMeters) : '—'} />
+          <Field label="File" value={v.stats.bytes ? formatBytes(v.stats.bytes) : '—'} />
+          <Field label="Source" value={v.note} />
+          <Field label="Created" value={ago(v.createdAt)} />
+          {v.provider && <Field label="Provider" value={v.provider} />}
+        </Panel>
+
+        <Panel style={{ padding: 12 }}>
+          <SectionLabel style={{ marginBottom: 8 }}>Motion</SectionLabel>
+
+          {a.clips.length === 0 ? (
+            <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 10px' }}>
+              This file contains no animation tracks.
             </p>
-            <SectionLabel style={{ marginBottom: 6 }}>Suggestions</SectionLabel>
-            <div style={{ display: 'grid', gap: 5 }}>
-              {suggestions.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => s.setPrompt(t)}
-                  style={{
-                    padding: '5px 9px',
-                    borderRadius: 20,
-                    border: `1px solid ${COLORS.accentBorder}`,
-                    background: 'transparent',
-                    color: COLORS.text2,
-                    fontSize: 11,
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {t}
-                </button>
-              ))}
+          ) : (
+            <div style={{ display: 'grid', gap: 5, marginBottom: 10 }}>
+              {a.clips.map((c) => {
+                const playing = s.clip === c.name;
+                return (
+                  <div
+                    key={c.name}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 8px',
+                      borderRadius: 6,
+                      background: playing ? COLORS.accentTint : COLORS.surface,
+                      border: `1px solid ${playing ? COLORS.accentBorder2 : COLORS.hairline}`,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = playing ? null : c.name;
+                        s.setClip(next);
+                        s.setReviewing(next != null && c.status === 'review');
+                      }}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 4,
+                        border: 'none',
+                        background: playing ? A : COLORS.control,
+                        color: playing ? COLORS.ink : COLORS.muted,
+                        fontSize: 9,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {playing ? '❚❚' : '▶'}
+                    </button>
+                    <span style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {c.name}
+                    </span>
+                    <StatusTag status={c.status} />
+                  </div>
+                );
+              })}
             </div>
-          </Panel>
-        )}
-      </div>
+          )}
 
-      {/* History strip */}
-      <div style={{ position: 'absolute', left: 16, bottom: 46, zIndex: 20 }}>
-        <SectionLabel style={{ marginBottom: 6 }}>History</SectionLabel>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {a.versions.map((ver, i) => {
-            const on = i === a.cur;
-            return (
+          {s.clip && (
+            <>
+              <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 5 }}>
+                Speed · {s.speed.toFixed(2)}×
+              </div>
+              <input
+                type="range"
+                min={0.25}
+                max={2}
+                step={0.05}
+                value={s.speed}
+                onChange={(e) => s.setSpeed(+e.target.value)}
+                style={{ width: '100%', accentColor: A, marginBottom: 10 }}
+              />
+            </>
+          )}
+
+          {s.reviewing && s.clip && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
               <button
-                key={ver.label}
                 type="button"
-                onClick={() => s.selectVersion(a, i)}
-                title={ver.prompt}
+                onClick={() => {
+                  s.setClipStatus(a, s.clip!, 'approved', `${a.name}: ${s.clip} approved`);
+                  s.setReviewing(false);
+                }}
                 style={{
-                  position: 'relative',
-                  width: 64,
-                  height: 48,
+                  flex: 1,
+                  padding: '7px 0',
                   borderRadius: 6,
-                  border: on ? `1.5px solid ${A}` : `1px solid ${COLORS.panelBorder}`,
-                  background: on
-                    ? 'repeating-linear-gradient(135deg, rgba(245,158,59,.12), rgba(245,158,59,.12) 6px, transparent 6px, transparent 12px)'
-                    : 'repeating-linear-gradient(135deg, rgba(255,255,255,.05), rgba(255,255,255,.05) 6px, transparent 6px, transparent 12px)',
-                  color: on ? A : COLORS.muted,
-                  fontFamily: mono,
-                  fontSize: 10,
+                  border: 'none',
+                  background: COLORS.ok,
+                  color: COLORS.onOk,
+                  fontWeight: 600,
+                  fontSize: 12,
                   cursor: 'pointer',
-                  padding: 4,
-                  textAlign: 'left',
                 }}
               >
-                <span style={{ position: 'absolute', top: 3, right: 4, fontSize: 8 }}>
-                  {ver.device === 'android' ? 'AND' : 'DSK'}
-                </span>
-                <span style={{ position: 'absolute', left: 5, bottom: 4 }}>{ver.label}</span>
+                Looks good
               </button>
-            );
-          })}
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  s.setClipStatus(a, s.clip!, 'rework', `${a.name}: ${s.clip} needs work`);
+                  s.setReviewing(false);
+                }}
+                style={outlineBtn}
+              >
+                Needs work
+              </button>
+            </div>
+          )}
+
+          {!s.canRig ? (
+            <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: 0 }}>
+              Rigging and motion clips come from Meshy. Connect a Meshy key in Settings.
+            </p>
+          ) : !v.taskId && !rigged ? (
+            <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: 0 }}>
+              Imported files have no provider task behind them, so they cannot be rigged here.
+            </p>
+          ) : !rigged ? (
+            <button type="button" onClick={() => void s.rig(a)} style={{ ...outlineBtn, width: '100%' }}>
+              Rig this model
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPicking(true)}
+              style={{ ...outlineBtn, width: '100%' }}
+            >
+              Add a motion clip
+            </button>
+          )}
+        </Panel>
       </div>
 
-      {/* Status line */}
+      {/* History */}
+      {a.versions.length > 1 && (
+        <div style={{ position: 'absolute', left: 16, bottom: 46, zIndex: 20 }}>
+          <SectionLabel style={{ marginBottom: 6 }}>History</SectionLabel>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {a.versions.map((ver, i) => {
+              const on = i === a.cur;
+              return (
+                <button
+                  key={ver.label}
+                  type="button"
+                  onClick={() => s.selectVersion(a, i)}
+                  title={`${ver.note}${ver.prompt ? ` — ${ver.prompt}` : ''}`}
+                  style={{
+                    position: 'relative',
+                    width: 64,
+                    height: 48,
+                    borderRadius: 6,
+                    border: on ? `1.5px solid ${A}` : `1px solid ${COLORS.panelBorder}`,
+                    background: on ? COLORS.accentTint : COLORS.surface,
+                    color: on ? A : COLORS.muted,
+                    fontFamily: mono,
+                    fontSize: 10,
+                    cursor: 'pointer',
+                    padding: 4,
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ position: 'absolute', top: 3, right: 4, fontSize: 8 }}>
+                    {ver.device === 'android' ? 'AND' : 'DSK'}
+                  </span>
+                  <span style={{ position: 'absolute', left: 5, bottom: 4 }}>{ver.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           position: 'absolute',
@@ -273,26 +310,26 @@ export function Editor() {
           zIndex: 20,
         }}
       >
-        {v.tris} tris · {v.mats} mats · 2K · {modeStatus} ·{' '}
-        <span style={{ color: COLORS.ok }}>● {s.engine.name} ready</span>
-        {approved.length > 0 && <> · clips: {approved.join(' · ')}</>}
+        {formatTris(v.stats.triangles)} tris · {v.stats.materials} mats ·{' '}
+        {v.stats.clipNames.length} clip{v.stats.clipNames.length === 1 ? '' : 's'} ·{' '}
+        {v.stats.bytes ? formatBytes(v.stats.bytes) : '—'}
       </div>
 
-      {/* AI reply bar + prompt bar */}
+      {/* Reply + prompt bar */}
       <div
         style={{
           position: 'absolute',
           left: '50%',
           bottom: 16,
           transform: 'translateX(-50%)',
-          width: 'min(640px, calc(100% - 580px))',
-          minWidth: 380,
+          width: 'min(640px, calc(100% - 620px))',
+          minWidth: 360,
           display: 'grid',
           gap: 8,
           zIndex: 30,
         }}
       >
-        {s.lastReply && !s.generating && (
+        {s.lastReply && !s.job.running && (
           <div
             style={{
               display: 'flex',
@@ -308,34 +345,29 @@ export function Editor() {
             }}
           >
             <span style={{ flex: 1, color: COLORS.text2 }}>{s.lastReply}</span>
-            <button
-              type="button"
-              onClick={() => {
-                s.undoLast(a);
-                s.setLastReply('');
-              }}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: A,
-                fontSize: 11,
-                cursor: 'pointer',
-                padding: 0,
-              }}
-            >
-              Undo
-            </button>
+            {a.versions.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  s.undoLast(a);
+                  s.setLastReply('');
+                }}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: A,
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                Undo
+              </button>
+            )}
           </div>
         )}
 
-        <Panel
-          glass
-          style={{
-            padding: 10,
-            borderRadius: 12,
-            boxShadow: '0 20px 50px rgba(0,0,0,.5)',
-          }}
-        >
+        <Panel glass style={{ padding: 10, borderRadius: 12, boxShadow: '0 20px 50px rgba(0,0,0,.5)' }}>
           <div style={{ display: 'flex', gap: 9 }}>
             <span
               style={{ width: 10, height: 10, borderRadius: 5, background: A, marginTop: 4, flexShrink: 0 }}
@@ -347,17 +379,13 @@ export function Editor() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  s.submitPrompt();
+                  void s.submitPrompt();
                 }
               }}
               placeholder={
-                s.mode === 'Animate'
-                  ? s.reviewing
-                    ? `What's off about the ${s.anim}? e.g. "slower, heavier steps"`
-                    : 'Try "show me it walking" or "show me it running"'
-                  : s.selected
-                    ? `Describe a change to ${s.selected}…`
-                    : 'Describe a change, or ask "show me it walking"'
+                s.canGenerate
+                  ? 'Describe the next version of this asset…'
+                  : 'Connect a 3D provider in Settings to generate'
               }
               style={{
                 flex: 1,
@@ -370,37 +398,21 @@ export function Editor() {
               }}
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => s.setSelected(null)}
-              style={{
-                padding: '4px 9px',
-                borderRadius: 4,
-                border: `1px solid ${s.selected ? COLORS.accentBorder : COLORS.inputBorder}`,
-                background: s.selected ? COLORS.accentTint2 : 'transparent',
-                color: s.selected ? A : COLORS.muted,
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-            >
-              {s.selected ? '@' + s.selected : '@whole model'}
-            </button>
-            <button type="button" onClick={() => s.setModal('photo')} style={chipBtn}>
-              + photo
-            </button>
-            <span style={chipBtn}>style: {s.defaults.style}</span>
-            <span style={chipBtn}>budget ≤ {s.defaults.triBudget.toLocaleString()}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+            <span style={{ ...chipBtn, color: COLORS.muted }}>
+              style: {s.settings.style}
+            </span>
+            <span style={chipBtn}>budget ≤ {s.settings.triBudget.toLocaleString()}</span>
             <div style={{ flex: 1 }} />
             <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>⌘⏎</span>
             <button
               type="button"
-              onClick={s.submitPrompt}
+              onClick={() => void s.submitPrompt()}
               style={{
                 padding: '6px 14px',
                 borderRadius: 6,
                 border: 'none',
-                background: s.prompt.trim() ? A : '#8a5a22',
+                background: s.prompt.trim() && s.canGenerate ? A : '#8a5a22',
                 color: COLORS.ink,
                 fontWeight: 600,
                 fontSize: 12,
@@ -412,9 +424,83 @@ export function Editor() {
           </div>
         </Panel>
       </div>
+
+      {picking && (
+        <div
+          onClick={() => setPicking(false)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(13,14,17,.7)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 70,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+          <Panel
+            style={{
+              width: 420,
+              maxHeight: '70vh',
+              overflowY: 'auto',
+              padding: 16,
+              borderRadius: 12,
+              boxShadow: '0 30px 80px rgba(0,0,0,.6)',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Add a motion clip</div>
+            <p style={{ fontSize: 11, color: COLORS.muted, margin: '6px 0 12px', lineHeight: 1.6 }}>
+              These are the actions your provider offers for a rigged model. Each one uses credits
+              on your account.
+            </p>
+            {actions === null ? (
+              <div style={{ fontSize: 12, color: COLORS.muted }}>Loading the motion list…</div>
+            ) : actions.length === 0 ? (
+              <div style={{ fontSize: 12, color: COLORS.muted, lineHeight: 1.6 }}>
+                Your provider returned no actions. Check the key in Settings, or that your plan
+                includes animation.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {actions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => {
+                      setPicking(false);
+                      void s.addClip(a, action).then((updated) => {
+                        const fresh = updated?.clips.find((c) => c.status === 'review');
+                        if (fresh) {
+                          s.setClip(fresh.name);
+                          s.setReviewing(true);
+                        }
+                      });
+                    }}
+                    style={{ ...outlineBtn, width: '100%', textAlign: 'left' }}
+                  >
+                    {action.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+          </div>
+        </div>
+      )}
     </>
   );
 }
+
+const outlineBtn = {
+  flex: 1,
+  padding: '8px 12px',
+  borderRadius: 6,
+  border: `1px solid ${COLORS.inputBorder}`,
+  background: 'transparent',
+  color: COLORS.text2,
+  fontSize: 12,
+  cursor: 'pointer',
+} as const;
 
 const chipBtn = {
   padding: '4px 9px',
@@ -423,5 +509,4 @@ const chipBtn = {
   background: 'transparent',
   color: COLORS.muted,
   fontSize: 11,
-  cursor: 'pointer',
 } as const;

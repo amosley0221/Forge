@@ -1,5 +1,4 @@
 import type { Asset, SyncMeta } from './types.js';
-import { seed } from './seed.js';
 
 const KEY = 'forge.assets.v1';
 const QUEUE_KEY = 'forge.queue.v1';
@@ -24,9 +23,9 @@ export interface SyncTransport {
 function readLocal(): Asset[] | null {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (Array.isArray(v) && v.length) return v as Asset[];
+    if (Array.isArray(v)) return v as Asset[];
   } catch {
-    /* corrupt or unavailable storage — fall through to the seed */
+    /* corrupt or unavailable storage — start empty rather than guess */
   }
   return null;
 }
@@ -65,11 +64,9 @@ export function createLocalTransport(): SyncTransport {
 
   return {
     load() {
-      const stored = readLocal();
-      if (stored) return stored;
-      const s = seed();
-      writeLocal(s);
-      return s;
+      // A fresh install has no assets. Nothing is seeded — the library is
+      // empty until the user generates or imports something.
+      return readLocal() ?? [];
     },
     save(assets, meta) {
       writeLocal(assets);
