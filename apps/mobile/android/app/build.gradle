@@ -1,0 +1,128 @@
+apply plugin: 'com.android.application'
+
+/*
+ * Version and signing come from outside the file so CI can drive them:
+ *
+ *   ./gradlew assembleRelease \
+ *       -PforgeVersionName=0.4.1 -PforgeVersionCode=7
+ *
+ * versionCode must increase on every release — it is the only value Android
+ * compares when deciding whether an APK is an update. versionName is the human
+ * label. Both default to a dev build so a local `assembleDebug` still works.
+ */
+def forgeVersionName = project.findProperty('forgeVersionName') ?:
+        System.getenv('FORGE_VERSION_NAME') ?: '0.4.0'
+def forgeVersionCode = (project.findProperty('forgeVersionCode') ?:
+        System.getenv('FORGE_VERSION_CODE') ?: '1') as Integer
+
+/*
+ * Signing. Order of preference:
+ *   1. keystore.properties next to this project (never committed), or the
+ *      matching FORGE_KEYSTORE_* environment variables — this is what CI uses
+ *      when the ANDROID_KEYSTORE_BASE64 secret is set.
+ *   2. the checked-in keystore under android/keystore/.
+ *
+ * Whichever is used, every release must be signed with the SAME key or Android
+ * refuses to install it over the existing app. See docs/ANDROID_RELEASE.md.
+ */
+def keystorePropsFile = rootProject.file('keystore.properties')
+def signingProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { signingProps.load(it) }
+}
+
+def resolvedStorePath = signingProps.getProperty('storeFile') ?:
+        System.getenv('FORGE_KEYSTORE_PATH') ?:
+        rootProject.file('keystore/forge-release.jks').absolutePath
+def resolvedStorePassword = signingProps.getProperty('storePassword') ?:
+        System.getenv('FORGE_KEYSTORE_PASSWORD') ?: 'forgeforge'
+def resolvedKeyAlias = signingProps.getProperty('keyAlias') ?:
+        System.getenv('FORGE_KEY_ALIAS') ?: 'forge'
+def resolvedKeyPassword = signingProps.getProperty('keyPassword') ?:
+        System.getenv('FORGE_KEY_PASSWORD') ?: resolvedStorePassword
+
+def resolvedStoreFile = file(resolvedStorePath)
+def hasSigningKey = resolvedStoreFile.exists()
+
+android {
+    namespace "games.dustline.forge"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "games.dustline.forge"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode forgeVersionCode
+        versionName forgeVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (hasSigningKey) {
+                storeFile resolvedStoreFile
+                storePassword resolvedStorePassword
+                keyAlias resolvedKeyAlias
+                keyPassword resolvedKeyPassword
+                // v1 keeps <7.0 installs working; v2/v3 are what modern
+                // Android verifies, and v3 is what allows a future key rotation.
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasSigningKey) {
+                signingConfig signingConfigs.release
+            } else {
+                logger.warn("No signing key at ${resolvedStorePath} — the release APK will be unsigned and cannot be installed.")
+            }
+        }
+    }
+
+    // forge-<versionName>.apk, so the release asset name is stable and readable.
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "forge-${variant.versionName}.apk"
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core:$androidxCoreVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

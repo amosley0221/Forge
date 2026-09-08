@@ -1,0 +1,51 @@
+/* Global reset + motion shared by both apps. Colour tokens live in
+   @forge/core `COLORS` so TypeScript and CSS can't drift apart. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --canvas: #0d0e11;
+  --surface: #16171a;
+  --panel: #1b1c20;
+  --raised: #22242a;
+  --control: #2a2c31;
+  --input: #101114;
+  --hairline: rgba(255, 255, 255, 0.08);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --input-border: rgba(255, 255, 255, 0.14);
+  --text: #e6e4df;
+  --text-2: #b9b7b1;
+  --muted: #8b8a86;
+  --disabled: #4a4c52;
+  --accent: #f59e3b;
+  --accent-hover: #ffb866;
+  --ink: #1a1200;
+  --ok: #34c77b;
+  --danger: #ff5f57;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); }
+a:hover { color: var(--accent-hover); }
+
+textarea, input, button { font-family: inherit; }
+textarea:focus, input:focus { outline: none; }
+button { -webkit-tap-highlight-color: transparent; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--control); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

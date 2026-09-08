@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Forge design tokens; keep in sync with packages/core COLORS. -->
+    <color name="colorPrimary">#16171A</color>
+    <color name="colorPrimaryDark">#0D0E11</color>
+    <color name="colorAccent">#F59E3B</color>
+    <color name="forgeCanvas">#0D0E11</color>
+</resources>

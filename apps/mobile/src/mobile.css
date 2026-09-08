@@ -1,0 +1,17 @@
+/* Phone-specific overrides on top of the shared tokens. */
+html, body, #root {
+  font-size: 13px;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  /* iOS/Android zoom-on-focus kicks in below 16px on some devices. */
+  font-size: 13px;
+}
+
+/* Touch targets stay at least 44px; see the tab bar and input row. */
+button { touch-action: manipulation; }

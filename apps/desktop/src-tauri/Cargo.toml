@@ -1,0 +1,22 @@
+[package]
+name = "forge"
+version = "0.4.0"
+description = "Forge — AI 3D game asset studio"
+authors = ["Dustline"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+keyring = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Enabled by `tauri dev`; disables the production asset check.
+custom-protocol = ["tauri/custom-protocol"]

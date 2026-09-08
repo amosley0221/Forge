@@ -1,0 +1,319 @@
+name: Release
+
+# Publishes the Android APK (plus the desktop bundles when they build) to the
+# GitHub releases page, together with a `latest.json` manifest the in-app
+# updater reads. Every APK keeps the same applicationId and is signed with the
+# same key, so a release installs straight over the previous one — no uninstall,
+# no data loss. See docs/ANDROID_RELEASE.md.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.4.1 (defaults to package.json)'
+        required: false
+        type: string
+      prerelease:
+        description: 'Mark the GitHub release as a pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      version_code: ${{ steps.v.outputs.version_code }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version and versionCode
+        id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+
+          # versionCode is the only value Android compares when deciding
+          # whether an APK is an update, so derive it from the version and keep
+          # it strictly increasing: 0.4.1 -> 4001, 1.2.3 -> 1002003.
+          CORE="${VERSION%%-*}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${CORE}"
+          MAJOR="${MAJOR:-0}"; MINOR="${MINOR:-0}"; PATCH="${PATCH:-0}"
+          if ! [[ "$MAJOR$MINOR$PATCH" =~ ^[0-9]+$ ]]; then
+            echo "::error::Version '${VERSION}' is not major.minor.patch"
+            exit 1
+          fi
+          CODE=$(( MAJOR * 1000000 + MINOR * 1000 + PATCH ))
+          if [ "$CODE" -le 0 ]; then
+            echo "::error::versionCode resolved to ${CODE}; bump the version"
+            exit 1
+          fi
+
+          echo "version=${VERSION}"      >> "$GITHUB_OUTPUT"
+          echo "version_code=${CODE}"    >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}"         >> "$GITHUB_OUTPUT"
+          echo "Releasing ${VERSION} (versionCode ${CODE})"
+
+  android:
+    name: Android APK
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle
+        run: npm run build:mobile
+
+      - name: Sync Capacitor
+        working-directory: apps/mobile
+        run: npx cap sync android
+
+      # A release is only installable over the previous one when it is signed
+      # with the same certificate. Prefer the repository secret; fall back to
+      # the checked-in key so a fresh clone can still cut a release.
+      - name: Resolve signing key
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "${RUNNER_TEMP}/forge-release.jks"
+            echo "path=${RUNNER_TEMP}/forge-release.jks" >> "$GITHUB_OUTPUT"
+            echo "source=secret" >> "$GITHUB_OUTPUT"
+            echo "Signing with the ANDROID_KEYSTORE_BASE64 secret."
+          else
+            echo "path=$GITHUB_WORKSPACE/apps/mobile/android/keystore/forge-release.jks" >> "$GITHUB_OUTPUT"
+            echo "source=repo" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing with the keystore committed to the repository. Set the ANDROID_KEYSTORE_* secrets to use a private key — see docs/ANDROID_RELEASE.md."
+          fi
+
+      - name: Build signed release APK
+        working-directory: apps/mobile/android
+        env:
+          FORGE_KEYSTORE_PATH: ${{ steps.signing.outputs.path }}
+          FORGE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'forgeforge' }}
+          FORGE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'forge' }}
+          FORGE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || 'forgeforge' }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleRelease \
+            -PforgeVersionName=${{ needs.version.outputs.version }} \
+            -PforgeVersionCode=${{ needs.version.outputs.version_code }}
+
+      # Guards against the failure this whole pipeline exists to prevent:
+      # an unsigned or debug-signed APK, which Android refuses to install
+      # over the previous release.
+      - name: Verify the APK is signed
+        id: verify
+        run: |
+          set -euo pipefail
+          APK=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' | head -n1)
+          echo "Found $APK"
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | tee /tmp/certs.txt
+          if grep -qi 'CN=Android Debug' /tmp/certs.txt; then
+            echo "::error::APK is debug-signed; releases must use the release key."
+            exit 1
+          fi
+          SHA=$(grep -m1 'SHA-256 digest' /tmp/certs.txt | awk '{print $NF}')
+          echo "cert_sha256=${SHA}" >> "$GITHUB_OUTPUT"
+          mkdir -p dist
+          cp "$APK" "dist/forge-${{ needs.version.outputs.version }}.apk"
+
+      - name: Write release manifest
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          VERSION_CODE: ${{ needs.version.outputs.version_code }}
+          TAG: ${{ needs.version.outputs.tag }}
+          CERT: ${{ steps.verify.outputs.cert_sha256 }}
+        run: |
+          set -euo pipefail
+          APK="dist/forge-${VERSION}.apk"
+          export SIZE=$(stat -c%s "$APK")
+          export SHA=$(sha256sum "$APK" | awk '{print $1}')
+          export URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/forge-${VERSION}.apk"
+          node -e '
+            const fs = require("fs");
+            fs.writeFileSync("dist/latest.json", JSON.stringify({
+              versionName: process.env.VERSION,
+              versionCode: Number(process.env.VERSION_CODE),
+              publishedAt: new Date().toISOString(),
+              notes: `Forge ${process.env.VERSION} — installs over your current build.`,
+              apk: {
+                url: process.env.URL,
+                size: Number(process.env.SIZE),
+                sha256: process.env.SHA,
+              },
+              signingCertSha256: process.env.CERT || null,
+            }, null, 2) + "\n");
+          '
+          cat dist/latest.json
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/
+          if-no-files-found: error
+
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npm run build:core
+
+      - name: Generate platform icons
+        working-directory: apps/desktop
+        run: npx tauri icon src-tauri/icons/icon.png
+
+      - name: Build Tauri bundles
+        working-directory: apps/desktop
+        run: npx tauri build
+
+      - name: Collect bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find apps/desktop/src-tauri/target/release/bundle \
+            \( -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.app.tar.gz' \) \
+            -exec cp {} dist/ \;
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: dist/
+          if-no-files-found: warn
+
+  publish:
+    name: Publish release
+    needs: [version, android, desktop]
+    # The APK is the required artifact; a desktop build failing must not hold
+    # the Android release back.
+    if: always() && needs.android.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage release assets
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -la release
+          if [ ! -f "release/forge-${{ needs.version.outputs.version }}.apk" ]; then
+            echo "::error::APK missing from the staged assets"
+            exit 1
+          fi
+
+      - name: Write release notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          VERSION_CODE: ${{ needs.version.outputs.version_code }}
+        run: |
+          cat > release-notes.md <<EOF
+          ## Forge ${VERSION}
+
+          ### Android
+          Download **forge-${VERSION}.apk** below and open it — it installs **over** your existing
+          Forge install. No uninstall, and your project data stays put.
+
+          Already have Forge on the phone? Open it and tap **Update** in the banner on the Library
+          tab; it downloads and installs this build for you.
+
+          \`versionCode ${VERSION_CODE}\` · applicationId \`games.dustline.forge\`
+
+          ### Desktop
+          macOS \`.dmg\` and Windows \`.msi\` / \`-setup.exe\` are attached when those builds succeed.
+
+          ---
+          \`latest.json\` is the manifest the in-app updater reads; it is not something you need to
+          download.
+          EOF
+          cat release-notes.md
+
+      - name: Publish to the releases page
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRERELEASE=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then PRERELEASE="--prerelease"; fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Updating existing release $TAG"
+            gh release edit "$TAG" --title "Forge $VERSION" --notes-file release-notes.md
+            gh release upload "$TAG" release/* --clobber
+          else
+            echo "Creating release $TAG"
+            gh release create "$TAG" release/* \
+              --title "Forge $VERSION" \
+              --notes-file release-notes.md \
+              --target "$GITHUB_SHA" \
+              $PRERELEASE
+          fi
+          gh release view "$TAG" --json assets --jq '.assets[].name'

@@ -1,0 +1,31 @@
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+.env
+.env.local
+
+# Vite / TS
+.vite/
+*.tsbuildinfo
+
+# Tauri
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# Android
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/local.properties
+apps/mobile/android/app/src/main/assets/public/
+apps/mobile/android/app/release/
+*.apk
+*.aab
+!/**/keystore/*.jks
+
+# Signing material supplied via CI secrets — never commit real ones
+release.keystore
+*.keystore
+keystore.properties
