@@ -41,6 +41,13 @@ function findGlb(obj: unknown, depth = 0): string | undefined {
 function mapJob(job: MeshyJob, what: string): TaskStatus {
   const progress = typeof job.progress === 'number' ? job.progress : 0;
   const status = String(job.status ?? '').toUpperCase();
+  // No status field at all means the response is not the shape this code
+  // expects. Treating that as "queued" would poll forever against a job that
+  // was already paid for, so say what actually came back instead.
+  if (!status) {
+    const keys = Object.keys(job).join(', ') || 'nothing';
+    throw new ProviderError(`${what} returned an unexpected response (fields: ${keys})`);
+  }
   if (status === 'SUCCEEDED') {
     const modelUrl = findGlb(job);
     if (!modelUrl) throw new ProviderError(`${what} finished without a GLB in the response`);
@@ -178,10 +185,15 @@ export async function rigModel(opts: {
   inputTaskId: string;
   characterHeight: number;
   onProgress?: (p: RigProgress) => void;
+  /** Fires the moment Meshy accepts the job — which is when it charges. */
+  onTaskCreated?: (riggedTaskId: string) => void;
   signal?: AbortSignal;
 }): Promise<{ riggedTaskId: string; blob: Blob }> {
   opts.onProgress?.({ label: 'Sending the mesh to Meshy for rigging', percent: 3 });
   const riggedTaskId = await startRigging(opts.apiKey, opts.inputTaskId, opts.characterHeight);
+  // Meshy charges on acceptance, so hand the id back before polling: if the
+  // poll or the download then fails, the job is still finishable.
+  opts.onTaskCreated?.(riggedTaskId);
   const url = await poll(
     () => riggingStatus(opts.apiKey, riggedTaskId),
     (p) => opts.onProgress?.({ label: 'Meshy is building the skeleton', percent: 5 + p * 0.85 }),

@@ -759,12 +759,36 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
           onEvent: (e) =>
             setJob({ running: true, label: e.label, percent: e.percent, phase: e.phase, error: null }),
         });
-        const asset = await landResult(result, {
-          prompt: task.prompt,
-          category: task.category as Category,
-          fromImage: task.source === 'image',
-          providerId: provider.id,
-        });
+        let asset: Asset;
+        if (task.kind === 'rig' && task.assetId) {
+          // A rig is a new version of an existing asset, not a new asset.
+          const target = assetsRef.current.find((a) => a.id === task.assetId);
+          if (!target) throw new Error('The asset this rig belongs to is no longer here.');
+          const { fileId, stats } = await storeModel(result.blob);
+          const updated = appendVersion(target, {
+            note: 'rigged',
+            prompt: '',
+            device,
+            createdAt: Date.now(),
+            stats,
+            fileId,
+            provider: 'meshy',
+            taskId: currentVersion(target).taskId,
+            riggedTaskId: meshyRawTaskId(task.taskId),
+          });
+          upsert(
+            { ...updated, clips: mergeClips(updated.clips, stats) },
+            `${target.name} rigged`,
+          );
+          asset = updated;
+        } else {
+          asset = await landResult(result, {
+            prompt: task.prompt,
+            category: task.category as Category,
+            fromImage: task.source === 'image',
+            providerId: provider.id,
+          });
+        }
         forgetTask(task.taskId);
         setJob(IDLE_JOB);
         abort.current = null;
@@ -782,7 +806,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
         return null;
       }
     },
-    [credentials, landResult, forgetTask, markTaskFailed, say],
+    [credentials, landResult, forgetTask, markTaskFailed, say, storeModel, device, upsert],
   );
 
   recoverTaskRef.current = recoverTask;
@@ -803,6 +827,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     async (asset: Asset): Promise<Asset | null> => {
       const controller = new AbortController();
       abort.current = controller;
+      let paidRig: string | null = null;
       try {
         const key = requireMeshy();
         const version = currentVersion(asset);
@@ -818,6 +843,19 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
           inputTaskId: meshyRawTaskId(version.taskId),
           characterHeight: version.stats.sizeMeters || 1.7,
           signal: controller.signal,
+          onTaskCreated: (id) => {
+            paidRig = 'rig:' + id;
+            rememberTask({
+              taskId: paidRig,
+              provider: 'meshy',
+              prompt: `rig ${asset.name}`,
+              category: asset.category,
+              source: 'text',
+              createdAt: Date.now(),
+              kind: 'rig',
+              assetId: asset.id,
+            });
+          },
           onProgress: (p) =>
             setJob({ running: true, label: p.label, percent: p.percent, phase: 'generating', error: null }),
         });
@@ -834,6 +872,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
           riggedTaskId,
         });
         upsert({ ...updated, clips: mergeClips(updated.clips, stats) }, `${asset.name} rigged`);
+        if (paidRig) forgetTask(paidRig);
         setJob(IDLE_JOB);
         abort.current = null;
         return updated;
@@ -844,12 +883,15 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
           return null;
         }
         const error = e instanceof Error ? e.message : 'Rigging failed';
+        // The rig was charged for the moment Meshy accepted it, so leave it in
+        // the pending list with the reason rather than losing the credits.
+        if (paidRig) markTaskFailed(paidRig, error);
         setJob({ ...IDLE_JOB, error });
         say(error);
         return null;
       }
     },
-    [requireMeshy, storeModel, device, upsert, say],
+    [requireMeshy, storeModel, device, upsert, say, rememberTask, forgetTask, markTaskFailed],
   );
 
   /**

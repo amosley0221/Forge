@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { COLORS, ago, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
-import { Appearance, ForgeViewer, StatusTag, mono } from '@forge/ui';
+import { Appearance, ErrorPanel, ForgeViewer, StatusTag, mono } from '@forge/ui';
 import type { ViewerEngine } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 
@@ -212,6 +212,14 @@ export function AssetTab({ s }: { s: MobileSession }) {
                 Needs work
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Rigging, repainting and clips all run from this tab, so a failure has
+            to be readable here rather than only on the Library tab. */}
+        {s.job.error && (
+          <div style={{ marginTop: 14 }}>
+            <ErrorPanel message={s.job.error} onDismiss={s.dismissError} />
           </div>
         )}
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { COLORS, ago, formatBytes, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
-import { Appearance, ForgeViewer, Panel, SectionLabel, StatusTag, mono } from '@forge/ui';
+import { Appearance, ErrorPanel, ForgeViewer, Panel, SectionLabel, StatusTag, mono } from '@forge/ui';
 import type { ViewerEngine } from '@forge/ui';
 import type { Session } from '../session.js';
 
@@ -159,6 +159,11 @@ export function Editor({ s }: { s: Session }) {
           zIndex: 20,
         }}
       >
+        {/* Rigging, repainting and clips all run from this screen, so a failure
+            has to be readable here. Without this the message existed in state,
+            flashed as a toast and was gone. */}
+        {s.job.error && <ErrorPanel message={s.job.error} onDismiss={s.dismissError} />}
+
         <Panel style={{ padding: 12 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -181,7 +186,9 @@ export function Editor({ s }: { s: Session }) {
 
           {a.clips.length === 0 ? (
             <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 10px' }}>
-              This file contains no animation tracks.
+              {rigged
+                ? 'Rigged — it has a skeleton but no clips yet. Add one below, or use Pose to move it by hand.'
+                : 'This file contains no animation tracks.'}
             </p>
           ) : (
             <div style={{ display: 'grid', gap: 5, marginBottom: 10 }}>

@@ -158,9 +158,10 @@ function mapStatus(t: MeshyTask): TaskStatus {
  * paid job be resumed later. Anything talking to Meshy about the task itself —
  * rigging, for one — needs the bare id.
  */
-const kindOf = (taskId: string): 'image' | 'text' | 'texture' => {
+const kindOf = (taskId: string): 'image' | 'text' | 'texture' | 'rig' => {
   if (taskId.startsWith('img:')) return 'image';
   if (taskId.startsWith('tex:')) return 'texture';
+  if (taskId.startsWith('rig:')) return 'rig';
   return 'text';
 };
 
@@ -168,11 +169,12 @@ const PATHS = {
   text: 'v2/text-to-3d',
   image: 'v1/image-to-3d',
   texture: 'v1/retexture',
+  rig: 'v1/rigging',
 } as const;
 
 const pathFor = (taskId: string) => PATHS[kindOf(taskId)];
 
-export const meshyRawTaskId = (taskId: string) => taskId.replace(/^(img|tex):/, '');
+export const meshyRawTaskId = (taskId: string) => taskId.replace(/^(img|tex|rig):/, '');
 const rawId = meshyRawTaskId;
 
 /**

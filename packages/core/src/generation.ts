@@ -231,4 +231,12 @@ export interface PendingTask {
   createdAt: number;
   /** Why the first attempt did not finish, for the recovery UI. */
   error?: string;
+  /**
+   * What kind of job this was. A rig is charged like any other task but lands
+   * as a new version of an existing asset rather than as a new one, so
+   * recovery has to know the difference.
+   */
+  kind?: 'mesh' | 'rig';
+  /** The asset a recovered rig belongs to. */
+  assetId?: string;
 }
