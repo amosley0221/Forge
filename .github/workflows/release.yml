@@ -245,11 +245,53 @@ jobs:
             echo "::warning::Signing updates with the key committed to the repository. Set TAURI_SIGNING_PRIVATE_KEY to use a private one."
           fi
 
+      # Apple code signing, which is a completely separate thing from the
+      # updater key above. Without a sealed bundle signature macOS refuses a
+      # downloaded build outright — "Forge is damaged and can't be opened" —
+      # with no way to override it. tauri.conf.json ad-hoc signs by default,
+      # which makes the app launchable and turns that dead end into the normal
+      # "unidentified developer" prompt. A real Developer ID certificate, when
+      # one is available, is what removes the prompt entirely.
+      - name: Import the Apple signing certificate
+        id: apple
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+            echo "identity=-" >> "$GITHUB_OUTPUT"
+            echo "::warning::No APPLE_CERTIFICATE secret; ad-hoc signing instead. macOS will warn about an unidentified developer on first launch."
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/forge-signing.keychain-db"
+          PASSPHRASE="$(uuidgen)"
+          security create-keychain -p "$PASSPHRASE" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSPHRASE" "$KEYCHAIN"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$PASSPHRASE" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "identity=${APPLE_SIGNING_IDENTITY}" >> "$GITHUB_OUTPUT"
+
       - name: Build Tauri bundles
         working-directory: apps/desktop
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Tauri notarises automatically when all three are present, which is
+          # what stops macOS prompting at all. Absent, the build is still
+          # signed, just not notarised.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           if [ "${{ steps.updater_key.outputs.source }}" = "secret" ]; then
@@ -257,7 +299,33 @@ jobs:
           else
             export TAURI_SIGNING_PRIVATE_KEY="$(cat updater/forge-updater.key)"
           fi
+          if [ "${{ runner.os }}" = "macOS" ] && [ -n "${{ steps.apple.outputs.identity }}" ]; then
+            export APPLE_SIGNING_IDENTITY='${{ steps.apple.outputs.identity }}'
+          fi
           npx tauri build
+
+      # An unsealed bundle is exactly the failure this is meant to prevent, so
+      # prove the signature is there rather than trusting that the config was
+      # picked up. codesign --verify fails the build if it is not.
+      - name: Verify the macOS bundle is signed
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="apps/desktop/src-tauri/target/release/bundle/macos/Forge.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::$APP was not produced"
+            exit 1
+          fi
+          if [ ! -f "$APP/Contents/_CodeSignature/CodeResources" ]; then
+            echo "::error::Forge.app has no _CodeSignature — macOS will call it damaged"
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign --display --verbose=2 "$APP" 2>&1 | sed -n '1,12p'
+          # Informational: unnotarised builds are rejected here, and that is
+          # expected until a Developer ID certificate is configured.
+          spctl --assess --type execute --verbose=4 "$APP" || true
 
       - name: Collect bundles and update signatures
         shell: bash
@@ -397,6 +465,16 @@ jobs:
 
           ### Desktop
           macOS \`.dmg\` and Windows \`.msi\` / \`-setup.exe\` are attached when those builds succeed.
+
+          **First launch on macOS.** These builds are signed but not notarised by Apple, so the
+          first open is blocked. Drag Forge to Applications, then either right-click it and choose
+          **Open** (the dialog then offers Open anyway), or clear the download flag directly:
+
+          \`\`\`
+          xattr -dr com.apple.quarantine /Applications/Forge.app
+          \`\`\`
+
+          Only needed once per machine — in-app updates after that open normally.
 
           ---
           \`latest.json\` is the manifest the in-app updater reads; it is not something you need to
