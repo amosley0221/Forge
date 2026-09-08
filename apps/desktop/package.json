@@ -1,6 +1,6 @@
 {
   "name": "@forge/desktop",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,13 +9,17 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "predev": "node ../../scripts/copy-decoders.mjs public",
+    "prebuild": "node ../../scripts/copy-decoders.mjs public"
   },
   "dependencies": {
     "@forge/core": "*",
     "@forge/ui": "*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-http": "^2.6.0",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.11.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

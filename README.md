@@ -16,9 +16,11 @@ Everything ships from the [releases page][releases].
 - **Android** — `forge-<version>.apk`. It installs **over** your existing build, so you
   never uninstall and never lose your project. Already have it? Open Forge and tap
   **Update** on the Library tab.
-- **macOS** — `.dmg` · **Windows** — `.msi` or `-setup.exe`
+- **macOS** — `.dmg` · **Windows** — `.msi` or `-setup.exe`. The desktop app checks for
+  updates on launch and shows a banner; **Update and restart** installs the new build
+  over the current one and relaunches. Nothing is uninstalled.
 
-How that works, and how to swap in your own signing key, is in
+How both updaters work, and how to swap in your own signing keys, is in
 [docs/ANDROID_RELEASE.md](docs/ANDROID_RELEASE.md).
 
 ## What you need
@@ -61,6 +63,12 @@ provider API can deliver:
 - **Import and export** — import any `.glb`/`.gltf`; export hands over the real file
   (Share sheet on Android, download on desktop).
 - **Android release and in-app updates** — signed APK, `latest.json`, install in place.
+- **Desktop in-app updates** — Tauri's updater against a signed `updater.json`; the app
+  replaces itself and restarts.
+- **Paid-job recovery** — a provider charges the moment it accepts a job, so the task id
+  is written down before anything else can fail. If the download or the mesh import dies,
+  the job stays in a "didn't finish" list and can be completed without spending credits
+  again.
 
 **Not built**
 

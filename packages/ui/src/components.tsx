@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { COLORS } from '@forge/core';
 
@@ -270,6 +271,190 @@ export function EmptyState({
       </p>
       {action && <div style={{ marginTop: 6 }}>{action}</div>}
     </div>
+  );
+}
+
+/**
+ * A failure the user needs to read. Toasts vanish in three seconds, which is
+ * useless when a generation dies after the provider has charged for it — this
+ * stays until dismissed and can be copied into a bug report.
+ */
+export function ErrorPanel({
+  message,
+  onDismiss,
+  hint,
+}: {
+  message: string;
+  onDismiss?: () => void;
+  hint?: ReactNode;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 8,
+        background: 'rgba(255,95,87,.10)',
+        border: '1px solid rgba(255,95,87,.35)',
+        animation: 'rise 300ms ease',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.danger, flex: 1 }}>
+          That didn't finish
+        </div>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss"
+            style={{ background: 'none', border: 'none', color: COLORS.muted, cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      <p
+        style={{
+          margin: '7px 0 0',
+          fontSize: 11,
+          lineHeight: 1.55,
+          color: COLORS.text2,
+          fontFamily: mono,
+          wordBreak: 'break-word',
+        }}
+      >
+        {message}
+      </p>
+      {hint && (
+        <p style={{ margin: '9px 0 0', fontSize: 11, lineHeight: 1.55, color: COLORS.muted }}>
+          {hint}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard?.writeText(message).then(
+            () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            },
+            () => undefined,
+          );
+        }}
+        style={{
+          marginTop: 10,
+          padding: '6px 11px',
+          borderRadius: 6,
+          border: `1px solid ${COLORS.inputBorder}`,
+          background: 'transparent',
+          color: COLORS.text2,
+          fontSize: 11,
+          cursor: 'pointer',
+        }}
+      >
+        {copied ? 'Copied' : 'Copy the message'}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Jobs the provider accepted — and charged for — that never produced a model.
+ * Finishing one costs nothing, so it is offered before the user retries and
+ * pays again.
+ */
+export function PendingTasks({
+  tasks,
+  onRecover,
+  onForget,
+}: {
+  tasks: {
+    taskId: string;
+    provider: string;
+    prompt: string;
+    createdAt: number;
+    error?: string;
+  }[];
+  onRecover: (taskId: string) => void;
+  onForget: (taskId: string) => void;
+}) {
+  if (!tasks.length) return null;
+  return (
+    <Panel
+      style={{
+        padding: 12,
+        background: COLORS.accentTint,
+        border: `1px solid ${COLORS.accentBorder}`,
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 600, color: A }}>
+        {tasks.length} paid job{tasks.length > 1 ? 's' : ''} didn't finish
+      </div>
+      <p style={{ fontSize: 11, color: COLORS.text2, lineHeight: 1.55, margin: '6px 0 10px' }}>
+        Your provider already built and charged for these. Picking one back up downloads the model
+        again and costs no further credits.
+      </p>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {tasks.map((t) => (
+          <div
+            key={t.taskId}
+            style={{
+              padding: 9,
+              borderRadius: 6,
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.hairline}`,
+            }}
+          >
+            <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {t.prompt || 'Untitled job'}
+            </div>
+            <div style={{ fontFamily: mono, fontSize: 9, color: COLORS.muted, marginTop: 3 }}>
+              {t.provider} · {t.taskId.slice(0, 12)}…
+            </div>
+            {t.error && (
+              <div style={{ fontSize: 10, color: COLORS.danger, marginTop: 4, lineHeight: 1.5 }}>
+                {t.error}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => onRecover(t.taskId)}
+                style={{
+                  flex: 1,
+                  padding: '7px 0',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: A,
+                  color: COLORS.ink,
+                  fontWeight: 600,
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
+              >
+                Finish this job
+              </button>
+              <button
+                type="button"
+                onClick={() => onForget(t.taskId)}
+                style={{
+                  padding: '7px 11px',
+                  borderRadius: 6,
+                  border: `1px solid ${COLORS.inputBorder}`,
+                  background: 'transparent',
+                  color: COLORS.muted,
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
   );
 }
 

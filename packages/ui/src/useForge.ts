@@ -11,7 +11,10 @@ import {
   nameFrom,
   providerById,
   animateModel,
+  awaitTask,
   currentVersion,
+  loadPendingTasks,
+  savePendingTasks,
   listActions,
   rigModel,
   runGeneration,
@@ -22,6 +25,7 @@ import {
 import type {
   Asset,
   MeshyAction,
+  PendingTask,
   AssetVersion,
   BlobStore,
   Category,
@@ -77,6 +81,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   const [job, setJob] = useState<JobState>(IDLE_JOB);
   const [toast, setToast] = useState('');
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingTask[]>([]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const abort = useRef<AbortController | null>(null);
@@ -90,15 +95,17 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const [s, c, done] = await Promise.all([
+      const [s, c, done, tasks] = await Promise.all([
         loadSettings(store),
         loadProvider(store, secrets),
         hasOnboarded(store),
+        loadPendingTasks(store),
       ]);
       if (!alive) return;
       setSettingsState(s);
       setCredentials(c);
       setOnboardedState(done);
+      setPending(tasks);
     })();
     return () => {
       alive = false;
@@ -229,6 +236,43 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   );
 
   /* ---------------------------------------------------------------- */
+  /* Paid-but-unfinished tasks                                          */
+  /* ---------------------------------------------------------------- */
+
+  const rememberTask = useCallback(
+    (task: PendingTask) => {
+      setPending((prev) => {
+        const next = [...prev.filter((t) => t.taskId !== task.taskId), task];
+        void savePendingTasks(store, next);
+        return next;
+      });
+    },
+    [store],
+  );
+
+  const forgetTask = useCallback(
+    (taskId: string) => {
+      setPending((prev) => {
+        const next = prev.filter((t) => t.taskId !== taskId);
+        void savePendingTasks(store, next);
+        return next;
+      });
+    },
+    [store],
+  );
+
+  const markTaskFailed = useCallback(
+    (taskId: string, error: string) => {
+      setPending((prev) => {
+        const next = prev.map((t) => (t.taskId === taskId ? { ...t, error } : t));
+        void savePendingTasks(store, next);
+        return next;
+      });
+    },
+    [store],
+  );
+
+  /* ---------------------------------------------------------------- */
   /* Import and generation — the only two ways an asset comes to exist  */
   /* ---------------------------------------------------------------- */
 
@@ -292,8 +336,81 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   }, []);
 
   /**
+   * Turn a finished provider result into a stored asset or version. Shared by
+   * a fresh generation and by resuming a task that was already paid for.
+   */
+  const landResult = useCallback(
+    async (
+      result: { blob: Blob; modelUrl: string; taskId: string },
+      opts: {
+        prompt: string;
+        category: Category;
+        fromImage?: boolean;
+        target?: Asset;
+        note?: string;
+        providerId: 'meshy' | 'tripo';
+      },
+    ): Promise<Asset> => {
+      const { fileId, stats } = await storeModel(result.blob);
+
+      if (opts.target) {
+        const updated = appendVersion(opts.target, {
+          note: opts.note ?? 'prompt edit',
+          prompt: opts.prompt,
+          device,
+          createdAt: Date.now(),
+          stats,
+          fileId,
+          sourceUrl: result.modelUrl,
+          provider: opts.providerId,
+          taskId: result.taskId,
+        });
+        upsert(
+          { ...updated, clips: mergeClips(updated.clips, stats) },
+          `${updated.name} ${updated.versions[updated.cur].label} created on ${device}`,
+        );
+        return updated;
+      }
+
+      const asset: Asset = {
+        id: 'a' + Math.random().toString(36).slice(2, 10),
+        name: nameFrom(opts.prompt || 'asset'),
+        category: opts.category,
+        kind: KINDS[opts.category],
+        device,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        cur: 0,
+        versions: [
+          {
+            label: 'v1',
+            note: opts.fromImage ? 'generated from image' : 'generated from prompt',
+            prompt: opts.prompt,
+            device,
+            createdAt: Date.now(),
+            stats,
+            fileId,
+            sourceUrl: result.modelUrl,
+            provider: opts.providerId,
+            taskId: result.taskId,
+          },
+        ],
+        clips: clipsFromStats(stats),
+      };
+      upsert(asset, `${asset.name} created on ${device}`);
+      return asset;
+    },
+    [storeModel, device, upsert],
+  );
+
+  /**
    * Generate a new asset, or a new version of an existing one, using the
    * user's provider key. Progress comes from the provider.
+   *
+   * The task id is recorded the instant the provider accepts the job, because
+   * that is when it charges. If anything after that fails the job stays in the
+   * pending list and can be finished with `recoverTask` — the user is never
+   * asked to pay twice for a model the provider already built.
    */
   const generate = useCallback(
     async (opts: {
@@ -316,73 +433,107 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
       abort.current = controller;
       setJob({ running: true, label: 'Starting', percent: 0, phase: 'submitting', error: null });
 
+      let taskId: string | null = null;
+      const source: 'text' | 'image' = opts.imageUrl ? 'image' : 'text';
+
       try {
         const result = await runGeneration({
           provider,
           apiKey: credentials.apiKey,
-          source: opts.imageUrl ? 'image' : 'text',
+          source,
           prompt: opts.prompt,
           style: settings.style,
           triBudget:
             KINDS[opts.category] === 'creature' ? settings.creatureTriBudget : settings.triBudget,
           imageUrl: opts.imageUrl,
           signal: controller.signal,
+          onTaskCreated: (id) => {
+            taskId = id;
+            rememberTask({
+              taskId: id,
+              provider: provider.id,
+              prompt: opts.prompt,
+              category: opts.category,
+              source,
+              createdAt: Date.now(),
+            });
+          },
           onEvent: (e) =>
             setJob({ running: true, label: e.label, percent: e.percent, phase: e.phase, error: null }),
         });
 
-        const { fileId, stats } = await storeModel(result.blob);
-
-        if (opts.target) {
-          const next: Omit<AssetVersion, 'label'> = {
-            note: opts.note ?? 'prompt edit',
-            prompt: opts.prompt,
-            device,
-            createdAt: Date.now(),
-            stats,
-            fileId,
-            sourceUrl: result.modelUrl,
-            provider: provider.id,
-            taskId: result.taskId,
-          };
-          const updated = appendVersion(opts.target, next);
-          upsert(
-            { ...updated, clips: mergeClips(updated.clips, stats) },
-            `${updated.name} ${updated.versions[updated.cur].label} created on ${device}`,
-          );
-          setJob(IDLE_JOB);
-          abort.current = null;
-          return updated;
-        }
-
-        const asset: Asset = {
-          id: 'a' + Math.random().toString(36).slice(2, 10),
-          name: nameFrom(opts.prompt || 'asset'),
+        const asset = await landResult(result, {
+          prompt: opts.prompt,
           category: opts.category,
-          kind: KINDS[opts.category],
-          device,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          cur: 0,
-          versions: [
-            {
-              label: 'v1',
-              note: opts.imageUrl ? 'generated from image' : 'generated from prompt',
-              prompt: opts.prompt,
-              device,
-              createdAt: Date.now(),
-              stats,
-              fileId,
-              sourceUrl: result.modelUrl,
-              provider: provider.id,
-              taskId: result.taskId,
-            },
-          ],
-          clips: clipsFromStats(stats),
-        };
-        upsert(asset, `${asset.name} created on ${device}`);
+          fromImage: source === 'image',
+          target: opts.target,
+          note: opts.note,
+          providerId: provider.id,
+        });
+
+        forgetTask(result.taskId);
         setJob(IDLE_JOB);
         abort.current = null;
+        return asset;
+      } catch (e) {
+        abort.current = null;
+        const cancelled = e instanceof DOMException && e.name === 'AbortError';
+        const error = cancelled
+          ? 'Cancelled'
+          : e instanceof Error
+            ? e.message
+            : 'Generation failed';
+        if (taskId) markTaskFailed(taskId, error);
+        if (cancelled) {
+          setJob(IDLE_JOB);
+          return null;
+        }
+        setJob({ ...IDLE_JOB, error });
+        return null;
+      }
+    },
+    [credentials, settings, landResult, rememberTask, forgetTask, markTaskFailed, say],
+  );
+
+  /**
+   * Finish a task the provider already built and charged for. No new task is
+   * submitted, so this costs nothing.
+   */
+  const recoverTask = useCallback(
+    async (task: PendingTask): Promise<Asset | null> => {
+      const provider = providerById(credentials.provider);
+      if (!provider || !credentials.apiKey) {
+        say('Connect the same provider again to pick this up.');
+        return null;
+      }
+      if (provider.id !== task.provider) {
+        say(`This job ran on ${task.provider}; connect that provider to finish it.`);
+        return null;
+      }
+
+      const controller = new AbortController();
+      abort.current = controller;
+      setJob({ running: true, label: 'Picking the job back up', percent: 0, phase: 'submitting', error: null });
+
+      try {
+        const result = await awaitTask({
+          provider,
+          apiKey: credentials.apiKey,
+          taskId: task.taskId,
+          signal: controller.signal,
+          onEvent: (e) =>
+            setJob({ running: true, label: e.label, percent: e.percent, phase: e.phase, error: null }),
+        });
+        const asset = await landResult(result, {
+          prompt: task.prompt,
+          category: task.category as Category,
+          fromImage: task.source === 'image',
+          providerId: provider.id,
+        });
+        forgetTask(task.taskId);
+        setJob(IDLE_JOB);
+        abort.current = null;
+        say('Recovered — no extra credits used.');
         return asset;
       } catch (e) {
         abort.current = null;
@@ -390,13 +541,13 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
           setJob(IDLE_JOB);
           return null;
         }
-        const error = e instanceof Error ? e.message : 'Generation failed';
+        const error = e instanceof Error ? e.message : 'Could not finish the job';
+        markTaskFailed(task.taskId, error);
         setJob({ ...IDLE_JOB, error });
-        say(error);
         return null;
       }
     },
-    [credentials, settings, storeModel, device, upsert, say],
+    [credentials, landResult, forgetTask, markTaskFailed, say],
   );
 
   /* ---------------------------------------------------------------- */
@@ -566,6 +717,10 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     generate,
     importModel,
     cancelJob,
+    pendingTasks: pending,
+    recoverTask,
+    forgetTask,
+    dismissError: () => setJob(IDLE_JOB),
     rig,
     addClip,
     motionActions,

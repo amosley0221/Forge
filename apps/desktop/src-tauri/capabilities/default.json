@@ -14,6 +14,8 @@
     "shell:allow-open",
     "dialog:allow-open",
     "dialog:allow-save",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "http:default",
       "allow": [
@@ -21,19 +23,37 @@
           "url": "https://api.meshy.ai/*"
         },
         {
-          "url": "https://api.tripo3d.ai/*"
-        },
-        {
-          "url": "https://*.amazonaws.com/*"
-        },
-        {
           "url": "https://*.meshy.ai/*"
+        },
+        {
+          "url": "https://api.tripo3d.ai/*"
         },
         {
           "url": "https://*.tripo3d.ai/*"
         },
         {
+          "url": "https://*.amazonaws.com/*"
+        },
+        {
           "url": "https://*.cloudfront.net/*"
+        },
+        {
+          "url": "https://*.r2.cloudflarestorage.com/*"
+        },
+        {
+          "url": "https://*.blob.core.windows.net/*"
+        },
+        {
+          "url": "https://storage.googleapis.com/*"
+        },
+        {
+          "url": "https://*.googleapis.com/*"
+        },
+        {
+          "url": "https://*.githubusercontent.com/*"
+        },
+        {
+          "url": "https://github.com/*"
         }
       ]
     }

@@ -29,3 +29,7 @@ apps/mobile/android/app/release/
 release.keystore
 *.keystore
 keystore.properties
+
+# three.js decoders copied into each app at build time
+apps/*/public/draco/
+apps/*/public/basis/

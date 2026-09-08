@@ -1,6 +1,6 @@
 {
   "name": "@forge/mobile",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "cap": "cap",
     "sync": "npm run build && cap sync android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "predev": "node ../../scripts/copy-decoders.mjs public",
+    "prebuild": "node ../../scripts/copy-decoders.mjs public"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",

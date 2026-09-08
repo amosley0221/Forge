@@ -1,3 +1,4 @@
+import type { PendingTask } from './generation.js';
 import type { EnginePreset } from './types.js';
 
 /**
@@ -50,6 +51,7 @@ const SETTINGS_KEY = 'forge.settings.v1';
 const PROVIDER_KEY = 'forge.provider.v1';
 const SECRET_KEY = 'forge.provider.apiKey';
 const ONBOARDED_KEY = 'forge.onboarded.v1';
+const PENDING_KEY = 'forge.pendingTasks.v1';
 
 export async function loadSettings(store: KeyValueStore): Promise<ProjectSettings> {
   const raw = await store.get(SETTINGS_KEY);
@@ -95,6 +97,34 @@ export async function hasOnboarded(store: KeyValueStore): Promise<boolean> {
 
 export async function setOnboarded(store: KeyValueStore): Promise<void> {
   await store.set(ONBOARDED_KEY, '1');
+}
+
+/* ------------------------------------------------------------------ *
+ * Paid-but-unfinished provider tasks
+ * ------------------------------------------------------------------ */
+
+/**
+ * A provider charges the moment it accepts a job, so the task id is written
+ * down before anything else can go wrong. If the download or the mesh import
+ * then fails, the job can be picked up again instead of paid for twice.
+ */
+export async function loadPendingTasks(store: KeyValueStore): Promise<PendingTask[]> {
+  const raw = await store.get(PENDING_KEY);
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? (v as PendingTask[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function savePendingTasks(
+  store: KeyValueStore,
+  tasks: PendingTask[],
+): Promise<void> {
+  // Keep the list short; an old task's download URL expires anyway.
+  await store.set(PENDING_KEY, JSON.stringify(tasks.slice(-20)));
 }
 
 /** Browser/WebView fallback. Both apps override it with platform storage. */

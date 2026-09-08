@@ -132,6 +132,35 @@ warning when it does. Then delete
 `apps/mobile/android/keystore/forge-release.jks` and back up your new key somewhere
 you will not lose it — losing it means no one can ever update in place again.
 
+## Desktop updates
+
+The desktop app uses Tauri's updater. It reads
+
+```
+https://github.com/amosley0221/Forge/releases/latest/download/updater.json
+```
+
+which lists, per platform, the artifact URL and a signature. Tauri refuses to install
+anything whose signature does not verify against the public key baked into
+`apps/desktop/src-tauri/tauri.conf.json`, then replaces the installed app — the NSIS
+installer reruns in passive mode on Windows, the `.app` bundle is swapped on macOS — and
+the app relaunches. No uninstall, and settings and the keychain entry survive.
+
+The signing key lives at `apps/desktop/updater/forge-updater.key` (no password) and is
+used by the release workflow. As with the Android keystore it is committed so a fresh
+clone can cut a working release; to use a private one, add these repository secrets and
+delete the committed key:
+
+| Secret | Value |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | contents of the `.key` file |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password, if you set one |
+
+Generate a replacement with `npx tauri signer generate -w forge-updater.key`, and put the
+matching `.pub` contents into `plugins.updater.pubkey` in `tauri.conf.json`. Unlike the
+Android key, changing this one costs nothing beyond one manual reinstall — it does not
+force users to uninstall.
+
 ## Building an APK locally
 
 Needs JDK 17 and the Android SDK (`ANDROID_HOME` set):

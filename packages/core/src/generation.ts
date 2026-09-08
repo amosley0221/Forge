@@ -28,8 +28,14 @@ export interface RunGenerationOptions extends GenerateOptions {
   /** 'image' requires `imageUrl`. */
   source: 'text' | 'image';
   onEvent?: (e: GenerationEvent) => void;
+  /**
+   * Fires the moment the provider accepts the job — which is the moment it
+   * starts charging. Persist the id here so a later failure (a dropped
+   * download, a closed laptop) can be resumed without paying twice.
+   */
+  onTaskCreated?: (taskId: string) => void;
   signal?: AbortSignal;
-  /** How often to ask the provider for task status. */
+  /** How often to ask the provider for status. */
   pollMs?: number;
 }
 
@@ -80,6 +86,30 @@ export async function runGeneration(opts: RunGenerationOptions): Promise<Generat
     source === 'image'
       ? await provider.imageTo3D(apiKey, { ...opts, imageUrl: opts.imageUrl! })
       : await provider.textTo3D(apiKey, opts);
+  opts.onTaskCreated?.(taskId);
+
+  return awaitTask({ ...opts, taskId });
+}
+
+export interface AwaitTaskOptions {
+  provider: GenerationProvider;
+  apiKey: string;
+  taskId: string;
+  onEvent?: (e: GenerationEvent) => void;
+  signal?: AbortSignal;
+  pollMs?: number;
+}
+
+/**
+ * Wait for a task the provider has already accepted, then download it. Used
+ * both by a fresh generation and to resume one that was paid for but whose
+ * download never landed — no new task is submitted, so no new credits.
+ */
+export async function awaitTask(opts: AwaitTaskOptions): Promise<GenerationResult> {
+  const { provider, apiKey, taskId, onEvent, signal } = opts;
+  const pollMs = opts.pollMs ?? 3000;
+  const emit = (phase: GenerationEvent['phase'], label: string, p = 0) =>
+    onEvent?.({ phase, label, percent: weight(phase, p) });
 
   let last: TaskState = 'queued';
   let modelUrl: string | undefined;
@@ -129,4 +159,16 @@ export async function runGeneration(opts: RunGenerationOptions): Promise<Generat
   emit('importing', 'Reading the mesh');
   void last;
   return { taskId, modelUrl, blob };
+}
+
+/** A provider task that was paid for but never produced a stored model. */
+export interface PendingTask {
+  taskId: string;
+  provider: string;
+  prompt: string;
+  category: string;
+  source: 'text' | 'image';
+  createdAt: number;
+  /** Why the first attempt did not finish, for the recovery UI. */
+  error?: string;
 }

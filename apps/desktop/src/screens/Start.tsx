@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 import { CATEGORIES, COLORS, STARTERS, ago, approvedCount, formatTris, reviewCount } from '@forge/core';
-import { Chip, EmptyState, Panel, SectionLabel, mono } from '@forge/ui';
+import { Chip, EmptyState, ErrorPanel, Panel, PendingTasks, SectionLabel, mono } from '@forge/ui';
 import type { Session } from '../session.js';
+import { UpdateBanner } from '../components/UpdateBanner.js';
 
 const A = COLORS.accent;
 
@@ -53,6 +54,29 @@ export function Start({ s }: { s: Session }) {
             <code>.glb</code> you already have.
           </p>
         </div>
+
+        <UpdateBanner say={s.say} />
+
+        {s.job.error && (
+          <ErrorPanel
+            message={s.job.error}
+            onDismiss={s.dismissError}
+            hint={
+              s.pendingTasks.length
+                ? 'The job below was already paid for — finish it rather than generating again.'
+                : undefined
+            }
+          />
+        )}
+
+        <PendingTasks
+          tasks={s.pendingTasks}
+          onRecover={(id) => {
+            const task = s.pendingTasks.find((t) => t.taskId === id);
+            if (task) void s.recoverTask(task).then((a) => a && s.openAsset(a.id));
+          }}
+          onForget={s.forgetTask}
+        />
 
         {!s.canGenerate && (
           <Panel

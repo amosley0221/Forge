@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "0.5.0"
+version = "0.5.1"
 description = "Forge — AI 3D game asset studio"
 authors = ["Dustline"]
 edition = "2021"
@@ -15,6 +15,9 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 # Native HTTP so provider calls are not blocked by the WebView's CORS rules.
 tauri-plugin-http = "2"
+# In-app updates: download and install a newer build over this one.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

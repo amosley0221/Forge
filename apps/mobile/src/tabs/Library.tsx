@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { CATEGORIES, COLORS, ago, approvedCount, formatTris, reviewCount } from '@forge/core';
 import type { Category } from '@forge/core';
-import { EmptyState, mono } from '@forge/ui';
+import { EmptyState, ErrorPanel, PendingTasks, mono } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 import { UpdateBanner } from '../components/UpdateBanner.js';
 
@@ -59,6 +59,25 @@ export function Library({ s }: { s: MobileSession }) {
       </div>
 
       <UpdateBanner say={s.say} />
+
+      {s.job.error && (
+        <div style={{ marginBottom: 12 }}>
+          <ErrorPanel message={s.job.error} onDismiss={s.dismissError} />
+        </div>
+      )}
+
+      {s.pendingTasks.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <PendingTasks
+            tasks={s.pendingTasks}
+            onRecover={(id) => {
+              const task = s.pendingTasks.find((t) => t.taskId === id);
+              if (task) void s.recoverTask(task).then((a) => a && s.open(a.id));
+            }}
+            onForget={s.forgetTask}
+          />
+        </div>
+      )}
 
       {!s.canGenerate && (
         <button

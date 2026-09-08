@@ -227,18 +227,86 @@ jobs:
         working-directory: apps/desktop
         run: npx tauri icon src-tauri/icons/icon.png
 
+      # The updater will not install anything whose signature it cannot verify
+      # against the public key baked into tauri.conf.json, so the bundles are
+      # signed here. Prefer the repository secret; fall back to the committed
+      # key so a fresh clone can still cut a working release.
+      - name: Resolve updater signing key
+        id: updater_key
+        shell: bash
+        env:
+          UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${UPDATER_KEY:-}" ]; then
+            echo "source=secret" >> "$GITHUB_OUTPUT"
+          else
+            echo "source=repo" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing updates with the key committed to the repository. Set TAURI_SIGNING_PRIVATE_KEY to use a private one."
+          fi
+
       - name: Build Tauri bundles
         working-directory: apps/desktop
-        run: npx tauri build
-
-      - name: Collect bundles
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.updater_key.outputs.source }}" = "secret" ]; then
+            export TAURI_SIGNING_PRIVATE_KEY='${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}'
+          else
+            export TAURI_SIGNING_PRIVATE_KEY="$(cat updater/forge-updater.key)"
+          fi
+          npx tauri build
+
+      - name: Collect bundles and update signatures
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          find apps/desktop/src-tauri/target/release/bundle \
-            \( -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.app.tar.gz' \) \
+          BUNDLE=apps/desktop/src-tauri/target/release/bundle
+
+          # Installers a person downloads by hand.
+          find "$BUNDLE" \
+            \( -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) \
             -exec cp {} dist/ \;
+
+          # Artifacts the in-app updater consumes, plus their signatures.
+          find "$BUNDLE" \( -name '*.app.tar.gz' -o -name '*.sig' \) -exec cp {} dist/ \;
+
+          # Record what this runner produced so the publish job can assemble
+          # updater.json without guessing filenames per platform.
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const files = fs.readdirSync("dist");
+            const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+            const platform = process.platform === "darwin" ? `darwin-${arch}` : `windows-${arch}`;
+            // macOS updates from the .app.tar.gz; Windows from the NSIS installer.
+            const target = files.find((f) =>
+              process.platform === "darwin" ? f.endsWith(".app.tar.gz") : f.endsWith("-setup.exe"),
+            );
+            if (!target) {
+              console.log("no updater artifact on this platform; skipping");
+              process.exit(0);
+            }
+            const sig = files.find((f) => f === `${target}.sig`);
+            if (!sig) {
+              console.error(`::error::${target} has no .sig — the bundles were not signed`);
+              process.exit(1);
+            }
+            fs.writeFileSync(
+              path.join("dist", `updater-${platform}.json`),
+              JSON.stringify({
+                platform,
+                file: target,
+                signature: fs.readFileSync(path.join("dist", sig), "utf8").trim(),
+              }, null, 2),
+            );
+            console.log(`updater fragment for ${platform}: ${target}`);
+          '
           ls -la dist
 
       - uses: actions/upload-artifact@v4
@@ -273,6 +341,42 @@ jobs:
             echo "::error::APK missing from the staged assets"
             exit 1
           fi
+
+      # One manifest per app: latest.json for Android, updater.json for the
+      # Tauri desktop updater. Both live at a `releases/latest/download/` URL
+      # that always points at the newest release.
+      - name: Build the desktop updater manifest
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const base = `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.TAG}/`;
+            const platforms = {};
+            for (const name of fs.readdirSync("release")) {
+              if (!/^updater-.+\.json$/.test(name)) continue;
+              const f = JSON.parse(fs.readFileSync(`release/${name}`, "utf8"));
+              platforms[f.platform] = {
+                signature: f.signature,
+                url: base + encodeURIComponent(f.file),
+              };
+              fs.rmSync(`release/${name}`);
+            }
+            if (!Object.keys(platforms).length) {
+              console.log("no desktop platforms built; skipping updater.json");
+              process.exit(0);
+            }
+            fs.writeFileSync("release/updater.json", JSON.stringify({
+              version: process.env.VERSION,
+              notes: `Forge ${process.env.VERSION}`,
+              pub_date: new Date().toISOString(),
+              platforms,
+            }, null, 2) + "\n");
+            console.log(fs.readFileSync("release/updater.json", "utf8"));
+          '
 
       - name: Write release notes
         env:

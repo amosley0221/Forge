@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { COLORS, PROVIDERS, STYLES, formatBytes, providerById } from '@forge/core';
+import { COLORS, PROVIDERS, STYLES, formatBytes, httpClientName, providerById } from '@forge/core';
 import type { ProviderId } from '@forge/core';
 import { Chip, Panel, SectionLabel, Spinner, mono } from '@forge/ui';
 import type { Session } from '../session.js';
 import { secretsAreSecure } from '../storage.js';
 import { APP_VERSION } from '../version.js';
+import { RELEASES_PAGE, checkForUpdate, installUpdate } from '../updater.js';
 
 const A = COLORS.accent;
 
@@ -33,6 +34,8 @@ export function Settings({ s }: { s: Session }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [name, setName] = useState(s.settings.projectName);
+  const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
 
   const cachedFiles = s.assets.reduce((n, a) => n + a.versions.filter((v) => v.fileId).length, 0);
   const cachedBytes = s.assets.reduce(
@@ -235,6 +238,53 @@ export function Settings({ s }: { s: Session }) {
           <SectionLabel style={{ margin: '22px 0 10px' }}>About</SectionLabel>
           <Row label="Version">{APP_VERSION}</Row>
           <Row label="Shell">{secretsAreSecure() ? 'Tauri desktop' : 'browser (dev)'}</Row>
+          <Row label="Network">{httpClientName()}</Row>
+          {updateNote && (
+            <div style={{ fontSize: 11, color: COLORS.text2, padding: '8px 0', lineHeight: 1.5 }}>
+              {updateNote}
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={updating}
+            onClick={async () => {
+              setUpdateNote('Checking…');
+              const status = await checkForUpdate();
+              if (!status.supported) {
+                setUpdateNote('Updates are available in the installed desktop app.');
+                return;
+              }
+              if (status.error) {
+                setUpdateNote(status.error);
+                return;
+              }
+              if (!status.available || !status.update) {
+                setUpdateNote('You are on the newest release.');
+                return;
+              }
+              setUpdating(true);
+              setUpdateNote(`Installing ${status.version}…`);
+              try {
+                await installUpdate(status.update, (p) =>
+                  setUpdateNote(`Downloading ${status.version}… ${p}%`),
+                );
+              } catch (e) {
+                setUpdateNote(e instanceof Error ? e.message : 'Update failed');
+                setUpdating(false);
+              }
+            }}
+            style={outline}
+          >
+            {updating ? 'Updating…' : 'Check for updates'}
+          </button>
+          <a
+            href={RELEASES_PAGE}
+            target="_blank"
+            rel="noreferrer"
+            style={{ fontSize: 11, display: 'inline-block', marginTop: 10 }}
+          >
+            All releases ↗
+          </a>
         </Panel>
       </div>
     </div>

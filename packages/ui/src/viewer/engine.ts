@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGltfLoader } from './loader.js';
 import type { MeshStats } from '@forge/core';
 
 /**
@@ -65,7 +65,7 @@ export function measureScene(scene: THREE.Object3D, animations: THREE.AnimationC
 
 /** Load a GLB once, off-screen, purely to read its stats. */
 export async function readMeshStats(url: string): Promise<MeshStats> {
-  const gltf = await new GLTFLoader().loadAsync(url);
+  const gltf = await createGltfLoader().loadAsync(url);
   const stats = measureScene(gltf.scene, gltf.animations);
   gltf.scene.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
@@ -270,7 +270,7 @@ export class ViewerEngine {
     this.cb.onLoadingChange(true);
     let gltf: GLTF;
     try {
-      gltf = await new GLTFLoader().loadAsync(url);
+      gltf = await createGltfLoader(this.renderer).loadAsync(url);
     } catch (e) {
       if (token === this.loadToken && !this.disposed) {
         this.cb.onLoadingChange(false);
