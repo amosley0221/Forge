@@ -264,9 +264,14 @@ export function AssetTab({ s }: { s: MobileSession }) {
               rig. Generate a model in Forge to rig and animate it.
             </p>
           ) : !rigged ? (
-            <button type="button" onClick={() => void s.rig(a)} style={{ ...bigBtn, width: '100%' }}>
-              Rig this model
-            </button>
+            <>
+              <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 10px' }}>
+                Auto-rigging repositions the model into a T-pose and binds the skin by proximity, so loose geometry near the arms — a long coat, a cape, a skirt — usually ends up weighted to them and splays out. It works best on a model already standing in a T or A pose. The current version stays in the history either way.
+              </p>
+              <button type="button" onClick={() => void s.rig(a)} style={{ ...bigBtn, width: '100%' }}>
+                Rig this model
+              </button>
+            </>
           ) : (
             <>
               <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 8px' }}>

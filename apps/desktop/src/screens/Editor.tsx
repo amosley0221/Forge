@@ -307,9 +307,14 @@ export function Editor({ s }: { s: Session }) {
               Imported files have no provider task behind them, so they cannot be rigged here.
             </p>
           ) : !rigged ? (
-            <button type="button" onClick={() => void s.rig(a)} style={{ ...outlineBtn, width: '100%' }}>
-              Rig this model
-            </button>
+            <>
+              <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 9px' }}>
+                Auto-rigging repositions the model into a T-pose and binds the skin by proximity, so loose geometry near the arms — a long coat, a cape, a skirt — usually ends up weighted to them and splays out. It works best on a model already standing in a T or A pose with limbs clear of the body. The current version stays in the history either way.
+              </p>
+              <button type="button" onClick={() => void s.rig(a)} style={{ ...outlineBtn, width: '100%' }}>
+                Rig this model
+              </button>
+            </>
           ) : (
             <button
               type="button"
@@ -335,7 +340,30 @@ export function Editor({ s }: { s: Session }) {
       {/* History */}
       {a.versions.length > 1 && (
         <div style={{ position: 'absolute', left: 16, bottom: 46, zIndex: 20 }}>
-          <SectionLabel style={{ marginBottom: 6 }}>History</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+            <SectionLabel>History</SectionLabel>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`Delete ${a.versions[a.versions.length - 1].label} and go back?`)) {
+                  s.undoLast(a);
+                  s.setLastReply('');
+                }
+              }}
+              title="Delete the newest version and return to the one before it"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: A,
+                fontFamily: mono,
+                fontSize: 10,
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              undo {a.versions[a.versions.length - 1].label}
+            </button>
+          </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {a.versions.map((ver, i) => {
               const on = i === a.cur;
