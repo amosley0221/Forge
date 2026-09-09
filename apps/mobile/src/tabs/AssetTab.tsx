@@ -63,7 +63,7 @@ export function AssetTab({ s }: { s: MobileSession }) {
             url={s.modelUrl}
             clip={s.clip}
             selected={s.selected}
-            autorotate={!s.clip && !pose}
+            autorotate={s.settings.turntable && !s.clip && !pose}
             compact
             pose={pose}
             engineRef={viewer}
@@ -79,12 +79,31 @@ export function AssetTab({ s }: { s: MobileSession }) {
           {/* Pose is always shown, so the mode is discoverable before the model
               is rigged — hiding it just made it look like the feature was not
               there. Recentre matters more now that the view can be panned. */}
-          <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'flex', gap: 6 }}>
+          <div
+            style={{
+              position: 'absolute',
+              right: 8,
+              bottom: 8,
+              left: 8,
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              gap: 6,
+              pointerEvents: 'none',
+            }}
+          >
             {pose && (
               <button type="button" onClick={() => viewer.current?.resetPose()} style={hudBtn(false)}>
                 Reset pose
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => s.updateSettings({ turntable: !s.settings.turntable })}
+              style={hudBtn(s.settings.turntable)}
+            >
+              Turntable
+            </button>
             <button
               type="button"
               onClick={() => viewer.current?.resetCamera()}
@@ -493,6 +512,7 @@ const lightBtn = {
 /** Small overlay control sitting on the viewport. */
 function hudBtn(on: boolean) {
   return {
+    pointerEvents: 'auto' as const,
     padding: '7px 12px',
     borderRadius: 999,
     border: `1px solid ${on ? A : COLORS.inputBorder}`,

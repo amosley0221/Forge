@@ -22,7 +22,10 @@ export function useSession() {
   const [category, setCategory] = useState<Category>('Creature');
   const [selected, setSelected] = useState<string | null>(null);
   const [wire, setWire] = useState(false);
-  const [turntable, setTurntable] = useState(true);
+  // Kept in settings rather than component state so the choice survives a
+  // restart — it used to switch itself back on every launch.
+  const turntable = forge.settings.turntable;
+  const setTurntable = (on: boolean) => void forge.updateSettings({ turntable: on });
   const [clip, setClip] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1);
   const [reviewing, setReviewing] = useState(false);

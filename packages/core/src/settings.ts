@@ -32,6 +32,8 @@ export interface ProjectSettings {
    * geometry — no face, no clothing colour — and costs one task instead of two.
    */
   textured: boolean;
+  /** Slowly spin the model when the viewer is left alone. */
+  turntable: boolean;
   autoClips: boolean;
   lodLevels: number;
   guide: boolean;
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   creatureTriBudget: 8000,
   textureSize: 2048,
   textured: true,
+  turntable: true,
   autoClips: true,
   lodLevels: 4,
   guide: true,

@@ -44,3 +44,11 @@ test('a known style sends its full phrase, not its label', () => {
   assert.equal(stylePhrase('toon'), styleById('toon').phrase);
   assert.notEqual(stylePhrase('toon'), 'toon');
 });
+
+test('viewer preferences that used to be component state are remembered', () => {
+  // Turntable reset itself on every desktop launch and could not be turned off
+  // on Android at all, because it was not part of settings.
+  assert.equal(typeof DEFAULT_SETTINGS.turntable, 'boolean');
+  assert.equal(typeof DEFAULT_SETTINGS.textured, 'boolean');
+  assert.ok([2048, 4096].includes(DEFAULT_SETTINGS.textureSize));
+});
