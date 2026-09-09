@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { COLORS, cropToDataUrl, decodeImage } from '@forge/core';
+import { COLORS, cropToDataUrl, decodeImage, prepareImage } from '@forge/core';
 import { mono } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 
@@ -99,10 +99,13 @@ export function Capture({ s }: { s: MobileSession }) {
       w: rect.w * w,
       h: rect.h * h,
     });
+    // The crop is a full-resolution PNG; scale it before it goes over the wire
+    // base64-encoded, where a phone photo is megabytes for no extra detail.
+    const prepared = await prepareImage(dataUrl);
     const asset = await s.generate({
       prompt: note.trim() || 'object photographed with the phone camera',
       category: s.category,
-      imageUrl: dataUrl,
+      imageUrl: prepared.dataUrl,
     });
     if (asset) {
       setPhoto(null);

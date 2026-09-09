@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import {
   CATEGORIES,
   COLORS,
@@ -6,6 +6,7 @@ import {
   ago,
   approvedCount,
   exactTime,
+  prepareImage,
   formatTris,
   reviewCount,
 } from '@forge/core';
@@ -52,7 +53,21 @@ export function Start({ s }: { s: Session }) {
     ? Math.max(...s.assets.map((a) => a.updatedAt))
     : null;
   const fileInput = useRef<HTMLInputElement | null>(null);
-  const canGenerate = s.prompt.trim().length > 0 && s.canGenerate;
+  const imageInput = useRef<HTMLInputElement | null>(null);
+  const [image, setImage] = useState<{ dataUrl: string; width: number; height: number } | null>(
+    null,
+  );
+  const canGenerate = (s.prompt.trim().length > 0 || image !== null) && s.canGenerate;
+
+  const pickImage = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const prepared = await prepareImage(file);
+      setImage(prepared);
+    } catch (e) {
+      s.say(e instanceof Error ? e.message : 'That image could not be read');
+    }
+  };
 
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
@@ -71,8 +86,8 @@ export function Start({ s }: { s: Session }) {
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>What do you want to make?</h1>
           <p style={{ margin: '6px 0 0', fontSize: 12, color: COLORS.muted }}>
-            Describe it and Forge generates a 3D model through your provider, or import a{' '}
-            <code>.glb</code> you already have.
+            Describe it, or drop in a photo or reference image and Forge builds the model from
+            that. You can also import a <code>.glb</code> you already have.
           </p>
         </div>
 
@@ -159,9 +174,54 @@ export function Start({ s }: { s: Session }) {
               lineHeight: 1.5,
             }}
           />
+          {/* A chosen image replaces the description as the subject; the prompt
+              box stays live as an optional note the provider also reads. */}
+          {image && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                margin: '4px 0 2px',
+                padding: 8,
+                borderRadius: 8,
+                background: COLORS.surface,
+                border: `1px solid ${COLORS.accentBorder}`,
+              }}
+            >
+              <img
+                src={image.dataUrl}
+                alt=""
+                style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover' }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: COLORS.accent }}>Building from this image</div>
+                <div style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>
+                  {image.width}×{image.height} · the prompt box is an optional note
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImage(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: COLORS.muted,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
             <button type="button" onClick={() => fileInput.current?.click()} style={secondaryBtn}>
               Import .glb
+            </button>
+            <button type="button" onClick={() => imageInput.current?.click()} style={secondaryBtn}>
+              {image ? 'Change image' : 'From an image'}
             </button>
             <div style={{ flex: 1 }} />
             <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>
@@ -169,7 +229,10 @@ export function Start({ s }: { s: Session }) {
             </span>
             <button
               type="button"
-              onClick={() => void s.submitPrompt()}
+              onClick={() => {
+                if (image) void s.generateFromImage(image.dataUrl).then(() => setImage(null));
+                else void s.submitPrompt();
+              }}
               style={{
                 padding: '7px 16px',
                 borderRadius: 6,
@@ -350,6 +413,18 @@ export function Start({ s }: { s: Session }) {
           if (!file) return;
           const asset = await s.importModel(file, s.category);
           if (asset) s.openAsset(asset.id);
+        }}
+      />
+
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          await pickImage(file);
         }}
       />
     </div>

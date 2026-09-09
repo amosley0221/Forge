@@ -53,6 +53,33 @@ export function useSession() {
     setClip(null);
   }, []);
 
+  /**
+   * Build a model from a picture instead of a description. The prompt box is
+   * still read, as an optional note — "the character on the left", "make the
+   * cape red" — because the provider takes both.
+   */
+  const generateFromImage = useCallback(
+    async (imageUrl: string) => {
+      if (!forge.canGenerate) {
+        say('Connect a 3D provider in Settings to generate.');
+        return;
+      }
+      const note = prompt.trim();
+      const result = await generate({
+        prompt: note || 'the subject of this image',
+        category,
+        imageUrl,
+      });
+      if (!result) return;
+      setPrompt('');
+      openAsset(result.id);
+      setLastReply(
+        `Built ${result.name} from your image — ${result.versions[0].stats.triangles.toLocaleString()} triangles.`,
+      );
+    },
+    [forge.canGenerate, prompt, category, generate, say, openAsset],
+  );
+
   const submitPrompt = useCallback(async () => {
     const text = prompt.trim();
     if (!text) {
@@ -123,6 +150,7 @@ export function useSession() {
     openAsset,
     goStart,
     submitPrompt,
+    generateFromImage,
   };
 }
 

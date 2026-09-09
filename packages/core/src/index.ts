@@ -11,3 +11,4 @@ export * from './providers/index.js';
 export * from './generation.js';
 export * from './exporters.js';
 export * from './spritesheet.js';
+export * from './images.js';
