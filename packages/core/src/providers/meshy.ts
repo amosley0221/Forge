@@ -158,8 +158,9 @@ function mapStatus(t: MeshyTask): TaskStatus {
  * paid job be resumed later. Anything talking to Meshy about the task itself —
  * rigging, for one — needs the bare id.
  */
-const kindOf = (taskId: string): 'image' | 'text' | 'texture' | 'rig' => {
+const kindOf = (taskId: string): 'image' | 'text' | 'texture' | 'rig' | 'multi' => {
   if (taskId.startsWith('img:')) return 'image';
+  if (taskId.startsWith('mvi:')) return 'multi';
   if (taskId.startsWith('tex:')) return 'texture';
   if (taskId.startsWith('rig:')) return 'rig';
   return 'text';
@@ -170,11 +171,12 @@ const PATHS = {
   image: 'v1/image-to-3d',
   texture: 'v1/retexture',
   rig: 'v1/rigging',
+  multi: 'v1/multi-image-to-3d',
 } as const;
 
 const pathFor = (taskId: string) => PATHS[kindOf(taskId)];
 
-export const meshyRawTaskId = (taskId: string) => taskId.replace(/^(img|tex|rig):/, '');
+export const meshyRawTaskId = (taskId: string) => taskId.replace(/^(img|tex|rig|mvi):/, '');
 const rawId = meshyRawTaskId;
 
 /**
@@ -343,6 +345,45 @@ export const meshy: GenerationProvider = {
   },
 
   balance: fetchBalance,
+
+  /**
+   * Several views of the same subject, which is the single biggest lever on an
+   * image-to-3D result: from one picture the reconstruction has to invent
+   * everything it cannot see, and it reads high-contrast flat features — an
+   * eyebrow, a hair strand — as separate floating shells because nothing
+   * contradicts that. A side view settles it.
+   */
+  async multiImageTo3D(key: string, opts: GenerateOptions & { imageUrls: string[] }) {
+    const body = (field: string) => ({
+      [field]: opts.imageUrls,
+      enable_pbr: true,
+      should_remesh: true,
+      topology: 'triangle',
+      ...(opts.triBudget ? { target_polycount: opts.triBudget } : {}),
+    });
+
+    // Meshy's own tooling names this field two different ways depending on
+    // where you read, and their docs are not reachable from here. A rejected
+    // request creates no task and so costs nothing, which makes trying the
+    // second name safe rather than clever.
+    let created: MeshyCreate;
+    try {
+      created = await requestJson<MeshyCreate>(
+        `${BASE}/v1/multi-image-to-3d`,
+        { method: 'POST', headers: auth(key), body: JSON.stringify(body('multiview_image_urls')) },
+        'Meshy multi-image-to-3D',
+      );
+    } catch (e) {
+      if (!(e instanceof ProviderError) || e.status !== 400) throw e;
+      created = await requestJson<MeshyCreate>(
+        `${BASE}/v1/multi-image-to-3d`,
+        { method: 'POST', headers: auth(key), body: JSON.stringify(body('image_urls')) },
+        'Meshy multi-image-to-3D',
+      );
+    }
+    if (!created.result) throw new ProviderError('Meshy did not return a task id');
+    return 'mvi:' + created.result;
+  },
 
   async status(key: string, taskId: string): Promise<TaskStatus> {
     const path = pathFor(taskId);

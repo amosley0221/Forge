@@ -102,3 +102,56 @@ test('turning texturing off skips the stage entirely', async () => {
   });
   assert.deepEqual(calls, ['textTo3D']);
 });
+
+test('two or more views go to the multi-image endpoint', async () => {
+  stubDownload();
+  const calls = [];
+  const provider = fakeProvider(calls);
+  provider.multiImageTo3D = async (_k, opts) => {
+    calls.push(`multiImageTo3D(${opts.imageUrls.length})`);
+    return 'mvi:multi-task';
+  };
+  await runGeneration({
+    provider,
+    apiKey: 'k',
+    source: 'image',
+    prompt: 'this character',
+    imageUrls: ['data:image/png;base64,A', 'data:image/png;base64,B'],
+    texture: true,
+    pollMs: 1,
+  });
+  assert.deepEqual(calls, ['multiImageTo3D(2)']);
+});
+
+test('a single view still takes the plain image path', async () => {
+  stubDownload();
+  const calls = [];
+  const provider = fakeProvider(calls);
+  provider.multiImageTo3D = async () => {
+    calls.push('multiImageTo3D');
+    return 'mvi:x';
+  };
+  await runGeneration({
+    provider,
+    apiKey: 'k',
+    source: 'image',
+    prompt: 'this character',
+    imageUrls: ['data:image/png;base64,A'],
+    pollMs: 1,
+  });
+  assert.deepEqual(calls, ['imageTo3D']);
+});
+
+test('a provider without multi-image falls back rather than failing', async () => {
+  stubDownload();
+  const calls = [];
+  await runGeneration({
+    provider: fakeProvider(calls),
+    apiKey: 'k',
+    source: 'image',
+    prompt: 'this character',
+    imageUrls: ['data:image/png;base64,A', 'data:image/png;base64,B'],
+    pollMs: 1,
+  });
+  assert.deepEqual(calls, ['imageTo3D']);
+});

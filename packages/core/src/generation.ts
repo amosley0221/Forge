@@ -116,10 +116,17 @@ export async function runGeneration(opts: RunGenerationOptions): Promise<Generat
 
   emit('submitting', `Sending your prompt to ${provider.name}`);
 
+  // Two or more views go to the multi-image endpoint when the provider has
+  // one; a single view, or a provider without it, takes the normal path.
+  const views = opts.imageUrls ?? (opts.imageUrl ? [opts.imageUrl] : []);
+  const useMulti = source === 'image' && views.length > 1 && Boolean(provider.multiImageTo3D);
+
   const meshTaskId =
-    source === 'image'
-      ? await provider.imageTo3D(apiKey, { ...opts, imageUrl: opts.imageUrl! })
-      : await provider.textTo3D(apiKey, opts);
+    source !== 'image'
+      ? await provider.textTo3D(apiKey, opts)
+      : useMulti
+        ? await provider.multiImageTo3D!(apiKey, { ...opts, imageUrls: views })
+        : await provider.imageTo3D(apiKey, { ...opts, imageUrl: views[0] });
   opts.onTaskCreated?.(meshTaskId, 'mesh');
 
   if (!stage) return awaitTask({ ...opts, taskId: meshTaskId });

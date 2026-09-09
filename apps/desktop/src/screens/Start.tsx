@@ -54,16 +54,16 @@ export function Start({ s }: { s: Session }) {
     : null;
   const fileInput = useRef<HTMLInputElement | null>(null);
   const imageInput = useRef<HTMLInputElement | null>(null);
-  const [image, setImage] = useState<{ dataUrl: string; width: number; height: number } | null>(
-    null,
-  );
-  const canGenerate = (s.prompt.trim().length > 0 || image !== null) && s.canGenerate;
+  // Up to four views of one subject. More than that stops helping and only
+  // makes the request bigger.
+  const [images, setImages] = useState<{ dataUrl: string; width: number; height: number }[]>([]);
+  const canGenerate = (s.prompt.trim().length > 0 || images.length > 0) && s.canGenerate;
 
-  const pickImage = async (file: File | undefined) => {
-    if (!file) return;
+  const addImages = async (files: FileList | null) => {
+    if (!files?.length) return;
     try {
-      const prepared = await prepareImage(file);
-      setImage(prepared);
+      const prepared = await Promise.all([...files].map((f) => prepareImage(f)));
+      setImages((prev) => [...prev, ...prepared].slice(0, 4));
     } catch (e) {
       s.say(e instanceof Error ? e.message : 'That image could not be read');
     }
@@ -176,12 +176,9 @@ export function Start({ s }: { s: Session }) {
           />
           {/* A chosen image replaces the description as the subject; the prompt
               box stays live as an optional note the provider also reads. */}
-          {image && (
+          {images.length > 0 && (
             <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
                 margin: '4px 0 2px',
                 padding: 8,
                 borderRadius: 8,
@@ -189,30 +186,43 @@ export function Start({ s }: { s: Session }) {
                 border: `1px solid ${COLORS.accentBorder}`,
               }}
             >
-              <img
-                src={image.dataUrl}
-                alt=""
-                style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover' }}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: COLORS.accent }}>Building from this image</div>
-                <div style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>
-                  {image.width}×{image.height} · the prompt box is an optional note
-                </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {images.map((img, i) => (
+                  <div key={img.dataUrl.slice(-24) + i} style={{ position: 'relative' }}>
+                    <img
+                      src={img.dataUrl}
+                      alt=""
+                      style={{ width: 52, height: 52, borderRadius: 6, objectFit: 'cover' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setImages((prev) => prev.filter((_, n) => n !== i))}
+                      aria-label="Remove"
+                      style={{
+                        position: 'absolute',
+                        top: -6,
+                        right: -6,
+                        width: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        border: 'none',
+                        background: COLORS.raised,
+                        color: COLORS.text2,
+                        fontSize: 10,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
               </div>
-              <button
-                type="button"
-                onClick={() => setImage(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: COLORS.muted,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
-              >
-                ✕
-              </button>
+              <div style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted, marginTop: 7 }}>
+                {images.length === 1
+                  ? 'one view · add a side or back view for a much better result'
+                  : `${images.length} views of one subject · more angles, fewer invented details`}
+                {' · the prompt box is an optional note'}
+              </div>
             </div>
           )}
 
@@ -220,8 +230,13 @@ export function Start({ s }: { s: Session }) {
             <button type="button" onClick={() => fileInput.current?.click()} style={secondaryBtn}>
               Import .glb
             </button>
-            <button type="button" onClick={() => imageInput.current?.click()} style={secondaryBtn}>
-              {image ? 'Change image' : 'From an image'}
+            <button
+              type="button"
+              onClick={() => imageInput.current?.click()}
+              disabled={images.length >= 4}
+              style={secondaryBtn}
+            >
+              {images.length ? 'Add another view' : 'From an image'}
             </button>
             <div style={{ flex: 1 }} />
             <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>
@@ -230,8 +245,9 @@ export function Start({ s }: { s: Session }) {
             <button
               type="button"
               onClick={() => {
-                if (image) void s.generateFromImage(image.dataUrl).then(() => setImage(null));
-                else void s.submitPrompt();
+                if (images.length) {
+                  void s.generateFromImage(images.map((i) => i.dataUrl)).then(() => setImages([]));
+                } else void s.submitPrompt();
               }}
               style={{
                 padding: '7px 16px',
@@ -420,11 +436,12 @@ export function Start({ s }: { s: Session }) {
         ref={imageInput}
         type="file"
         accept="image/*"
+        multiple
         hidden
         onChange={async (e) => {
-          const file = e.target.files?.[0];
+          const files = e.target.files;
+          await addImages(files);
           e.target.value = '';
-          await pickImage(file);
         }}
       />
     </div>

@@ -29,6 +29,8 @@ export interface GenerateOptions {
   triBudget?: number;
   /** data: URI or https URL of the source image, for image-to-3D. */
   imageUrl?: string;
+  /** Two or more views of the same subject, for multi-image-to-3D. */
+  imageUrls?: string[];
 }
 
 export interface KeyCheck {
@@ -47,6 +49,8 @@ export interface GenerationProvider {
   validateKey(key: string): Promise<KeyCheck>;
   textTo3D(key: string, opts: GenerateOptions): Promise<string>;
   imageTo3D(key: string, opts: GenerateOptions & { imageUrl: string }): Promise<string>;
+  /** Several views of one subject. Not every provider offers it. */
+  multiImageTo3D?(key: string, opts: GenerateOptions & { imageUrls: string[] }): Promise<string>;
   status(key: string, taskId: string): Promise<TaskStatus>;
   /** Credits remaining, when the provider exposes them. */
   balance?(key: string): Promise<number | null>;

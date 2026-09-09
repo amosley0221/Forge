@@ -62,22 +62,23 @@ export function useSession() {
    * cape red" — because the provider takes both.
    */
   const generateFromImage = useCallback(
-    async (imageUrl: string) => {
+    async (imageUrls: string[]) => {
       if (!forge.canGenerate) {
         say('Connect a 3D provider in Settings to generate.');
         return;
       }
+      if (!imageUrls.length) return;
       const note = prompt.trim();
       const result = await generate({
-        prompt: note || 'the subject of this image',
+        prompt: note || 'the subject of these images',
         category,
-        imageUrl,
+        imageUrls,
       });
       if (!result) return;
       setPrompt('');
       openAsset(result.id);
       setLastReply(
-        `Built ${result.name} from your image — ${result.versions[0].stats.triangles.toLocaleString()} triangles.`,
+        `Built ${result.name} from ${imageUrls.length > 1 ? `${imageUrls.length} views` : 'your image'} — ${result.versions[0].stats.triangles.toLocaleString()} triangles.`,
       );
     },
     [forge.canGenerate, prompt, category, generate, say, openAsset],

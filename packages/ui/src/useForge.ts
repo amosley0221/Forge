@@ -652,6 +652,8 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
       prompt: string;
       category: Category;
       imageUrl?: string;
+      /** Several views of one subject; beats a single view by a long way. */
+      imageUrls?: string[];
       /** When set, the result becomes a new version of this asset. */
       target?: Asset;
       note?: string;
@@ -671,7 +673,8 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
       // Both stages are charged separately, so both ids are written down and
       // both stay recoverable until a model actually lands.
       const paidTasks: string[] = [];
-      const source: 'text' | 'image' = opts.imageUrl ? 'image' : 'text';
+      const source: 'text' | 'image' =
+        opts.imageUrl || opts.imageUrls?.length ? 'image' : 'text';
 
       try {
         const result = await runGeneration({
@@ -683,6 +686,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
           triBudget:
             KINDS[opts.category] === 'creature' ? settings.creatureTriBudget : settings.triBudget,
           imageUrl: opts.imageUrl,
+          imageUrls: opts.imageUrls,
           texture: settings.textured,
           textureResolution: settings.textureSize >= 4096 ? '4k' : '2k',
           texturePrompt: [opts.prompt, stylePhrase(settings.style)].filter(Boolean).join(', '),
