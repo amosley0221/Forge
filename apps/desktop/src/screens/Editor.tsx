@@ -130,6 +130,7 @@ export function Editor({ s }: { s: Session }) {
           onClick={() => setPose(!pose)}
         />
         {pose && <HudPill label="Reset pose" onClick={() => viewer.current?.resetPose()} />}
+        <HudPill label="Reset view" onClick={() => viewer.current?.resetCamera()} />
         <HudPill
           label={
             pose
@@ -138,9 +139,7 @@ export function Editor({ s }: { s: Session }) {
                 : 'drag a limb to bend it · drag the background to orbit'
               : s.selected
                 ? `${s.selected} selected`
-                : riggedInFile
-                  ? 'click a part to select · drag to orbit · wheel to zoom'
-                  : 'click a part to select · drag to orbit · rig the model to pose it'
+                : 'drag to orbit · right-drag or shift-drag to pan · double-click to zoom in on a spot'
           }
         />
       </div>

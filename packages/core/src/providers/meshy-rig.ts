@@ -27,15 +27,44 @@ interface MeshyJob {
   [k: string]: unknown;
 }
 
-/** Meshy nests the download under differently-named *_urls objects per task. */
-function findGlb(obj: unknown, depth = 0): string | undefined {
-  if (!obj || typeof obj !== 'object' || depth > 4) return undefined;
+/**
+ * Find the finished model in a response, without assuming where it sits.
+ *
+ * Meshy nests downloads under differently-named *_urls objects per task, and
+ * the key is not always literally "glb" — rigging returned a completed job
+ * whose URL this could not find, which read as a failure for a job that had
+ * succeeded and been charged for. So rather than matching one key name, every
+ * URL in the response is collected and the one that is actually a .glb wins.
+ */
+function collectUrls(
+  obj: unknown,
+  depth = 0,
+  found: { key: string; url: string }[] = [],
+): { key: string; url: string }[] {
+  if (!obj || typeof obj !== 'object' || depth > 6) return found;
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-    if (key === 'glb' && typeof value === 'string' && value.startsWith('http')) return value;
-    const nested = findGlb(value, depth + 1);
-    if (nested) return nested;
+    if (typeof value === 'string' && /^https?:\/\//.test(value)) found.push({ key, url: value });
+    else if (value && typeof value === 'object') collectUrls(value, depth + 1, found);
   }
-  return undefined;
+  return found;
+}
+
+
+function findGlb(obj: unknown): string | undefined {
+  const urls = collectUrls(obj);
+  // A URL that is plainly a .glb, whatever it is called.
+  const byExtension = urls.find((u) => /\.glb(\?|#|$)/i.test(u.url));
+  if (byExtension) return byExtension.url;
+  // Otherwise a key that says glb, for a signed URL with no visible extension.
+  const byKey = urls.find((u) => /glb/i.test(u.key));
+  return byKey?.url;
+}
+
+/** What did come back, so a shape we cannot read is diagnosable. */
+function describeUrls(obj: unknown): string {
+  const urls = collectUrls(obj);
+  if (!urls.length) return 'no URLs at all';
+  return urls.map((u) => u.key).join(', ');
 }
 
 /**
@@ -70,7 +99,11 @@ function mapJob(job: MeshyJob, what: string): TaskStatus {
   }
   if (status === 'SUCCEEDED') {
     const modelUrl = findGlb(job);
-    if (!modelUrl) throw new ProviderError(`${what} finished without a GLB in the response`);
+    if (!modelUrl) {
+      throw new ProviderError(
+        `${what} finished but no .glb was found in the response (URLs present: ${describeUrls(job)})`,
+      );
+    }
     return { state: 'succeeded', progress: 100, modelUrl };
   }
   if (status === 'FAILED' || status === 'CANCELED') {

@@ -76,15 +76,23 @@ export function AssetTab({ s }: { s: MobileSession }) {
             onPoseBone={setHeld}
           />
 
-          {/* Always shown, so the mode is discoverable before the model is
-              rigged — hiding it just made it look like the feature was not
-              there. */}
+          {/* Pose is always shown, so the mode is discoverable before the model
+              is rigged — hiding it just made it look like the feature was not
+              there. Recentre matters more now that the view can be panned. */}
           <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'flex', gap: 6 }}>
             {pose && (
               <button type="button" onClick={() => viewer.current?.resetPose()} style={hudBtn(false)}>
-                Reset
+                Reset pose
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => viewer.current?.resetCamera()}
+              aria-label="Reset view"
+              style={hudBtn(false)}
+            >
+              Recentre
+            </button>
             <button
               type="button"
               onClick={() =>
@@ -147,7 +155,7 @@ export function AssetTab({ s }: { s: MobileSession }) {
               color: COLORS.muted,
             }}
           >
-            {s.selected ? `${s.selected} selected` : 'tap a part · drag to orbit · pinch to zoom'}
+            {s.selected ? `${s.selected} selected` : 'drag to orbit · two fingers to pan and zoom · double-tap to zoom in'}
           </div>
         </div>
 

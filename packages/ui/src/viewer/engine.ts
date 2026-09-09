@@ -113,6 +113,7 @@ export class ViewerEngine {
   private skinned: THREE.SkinnedMesh[] = [];
   /** Every bone's transform as the file authored it, so a pose can be undone. */
   private restPose: { bone: THREE.Bone; quaternion: THREE.Quaternion }[] = [];
+  private panStart: { x: number; y: number; from: THREE.Vector3 } | null = null;
   private drag: {
     /** The joint being rotated — the parent of the bone that was grabbed. */
     pivot: THREE.Object3D;
@@ -228,6 +229,7 @@ export class ViewerEngine {
     let start: { x: number; y: number; rx: number; ry: number } | null = null;
     let moved = 0;
     let pinch = 0;
+    let lastMid: { x: number; y: number } | null = null;
     const points = new Map<number, { x: number; y: number }>();
 
     el.addEventListener('pointerdown', (e) => {
@@ -240,6 +242,13 @@ export class ViewerEngine {
         start = null;
         return;
       }
+      // Right or middle button, or shift-drag, slides the view instead of
+      // turning it — the standard convention in every 3D tool.
+      if (e.button === 1 || e.button === 2 || e.shiftKey) {
+        this.panStart = { x: e.clientX, y: e.clientY, from: this.target.clone() };
+        start = null;
+        return;
+      }
       start = { x: e.clientX, y: e.clientY, rx: this.rot.x, ry: this.rot.y };
     });
     el.addEventListener('pointermove', (e) => {
@@ -248,12 +257,19 @@ export class ViewerEngine {
         this.dragPose(e);
         return;
       }
+      if (this.panStart) {
+        this.panBy(e.clientX - this.panStart.x, e.clientY - this.panStart.y, this.panStart.from);
+        return;
+      }
       if (points.size === 2) {
-        // Pinch to zoom on touch.
+        // Two fingers pinch to zoom and slide to pan, the way a map does.
         const [a, b] = [...points.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (pinch) this.dist = Math.max(0.2, Math.min(60, this.dist * (pinch / d)));
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        if (pinch) this.dist = Math.max(0.08, Math.min(60, this.dist * (pinch / d)));
+        if (lastMid) this.panBy(mid.x - lastMid.x, mid.y - lastMid.y, this.target.clone());
         pinch = d;
+        lastMid = mid;
         start = null;
         return;
       }
@@ -274,13 +290,19 @@ export class ViewerEngine {
         this.pick(e);
       }
       points.delete(e.pointerId);
-      if (points.size < 2) pinch = 0;
+      if (points.size < 2) {
+        pinch = 0;
+        lastMid = null;
+      }
+      this.panStart = null;
       start = null;
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', (e) => {
       points.delete(e.pointerId);
       pinch = 0;
+      lastMid = null;
+      this.panStart = null;
       start = null;
       this.drag = null;
       this.cb.onPoseBone?.(null);
@@ -290,10 +312,15 @@ export class ViewerEngine {
       'wheel',
       (e) => {
         e.preventDefault();
-        this.dist = Math.max(0.2, Math.min(60, this.dist * (1 + e.deltaY * 0.001)));
+        // Allow much closer than before, so a face fills the frame.
+        this.dist = Math.max(0.08, Math.min(60, this.dist * (1 + e.deltaY * 0.001)));
       },
       { passive: false },
     );
+
+    el.addEventListener('dblclick', (e) => this.focusAt(e));
+    // Right-drag is a pan, so the menu must not interrupt it.
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   private pick(e: PointerEvent) {
@@ -410,6 +437,45 @@ export class ViewerEngine {
       : new THREE.Quaternion();
     drag.pivot.quaternion.copy(parentWorld.invert().multiply(world));
     drag.pivot.updateMatrixWorld(true);
+    this.idle = 0;
+  }
+
+  /**
+   * Slide the point the camera looks at, across the plane facing it.
+   *
+   * Without this the look-at point is pinned to the middle of the model, so a
+   * character's face can be zoomed towards but never actually centred — you
+   * orbit around the chest no matter how far in you go.
+   */
+  private panBy(dx: number, dy: number, from: THREE.Vector3) {
+    const height = this.renderer.domElement.clientHeight || 1;
+    // Scale by distance and field of view so a drag moves the same amount of
+    // model whether you are zoomed right in or way out.
+    const perPixel = (2 * Math.tan((this.cam.fov * Math.PI) / 360) * this.dist) / height;
+    const right = new THREE.Vector3().setFromMatrixColumn(this.cam.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(this.cam.matrixWorld, 1);
+    this.target
+      .copy(from)
+      .addScaledVector(right, -dx * perPixel)
+      .addScaledVector(up, dy * perPixel);
+    this.idle = 0;
+  }
+
+  /** Centre on whatever was double-clicked and move in — click a face, see it. */
+  private focusAt(e: PointerEvent | MouseEvent) {
+    if (!this.model) return;
+    const b = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(
+      ((e.clientX - b.left) / b.width) * 2 - 1,
+      -((e.clientY - b.top) / b.height) * 2 + 1,
+    );
+    this.ray.setFromCamera(this.pointer, this.cam);
+    const hit = this.ray
+      .intersectObject(this.model, true)
+      .find((h) => (h.object as THREE.Mesh).isMesh);
+    if (!hit) return;
+    this.target.copy(hit.point);
+    this.dist = Math.max(0.08, this.dist * 0.5);
     this.idle = 0;
   }
 
