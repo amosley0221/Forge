@@ -336,6 +336,9 @@ export const meshy: GenerationProvider = {
 
   textureStage: {
     label: 'Painting the textures',
+    // Text-to-3D only. Image-to-3D already returns a textured model, and its
+    // task id is not something the text-to-3D refine endpoint can resolve.
+    sources: ['text'],
     start: startTextureStage,
   },
 

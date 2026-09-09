@@ -59,6 +59,13 @@ export interface GenerationProvider {
   textureStage?: {
     /** Shown on the progress bar while it runs. */
     label: string;
+    /**
+     * Which sources this stage applies to. Not every path needs one: Meshy's
+     * image-to-3D produces a textured model in a single task, and handing that
+     * task to the text-to-3D refine endpoint fails with "Preview task not
+     * found" — it is a different endpoint that has never seen that id.
+     */
+    sources: ('text' | 'image')[];
     /** Takes the finished mesh task and returns the texture task's id. */
     start(
       key: string,

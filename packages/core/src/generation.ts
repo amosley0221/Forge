@@ -108,7 +108,8 @@ const weight = (
 
 export async function runGeneration(opts: RunGenerationOptions): Promise<GenerationResult> {
   const { provider, apiKey, source, onEvent, signal } = opts;
-  const stage = opts.texture ? provider.textureStage : undefined;
+  const declared = opts.texture ? provider.textureStage : undefined;
+  const stage = declared?.sources.includes(source) ? declared : undefined;
   const twoStage = Boolean(stage);
   const emit = (phase: GenerationEvent['phase'], label: string, p = 0) =>
     onEvent?.({ phase, label, percent: weight(phase, p, twoStage) });
