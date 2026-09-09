@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createGltfLoader } from './loader.js';
+import { decimate, extractPart, listParts, removeParts } from './meshedit.js';
+import type { MeshPart } from './meshedit.js';
 import type { MeshStats } from '@forge/core';
 
 /**
@@ -114,6 +116,7 @@ export class ViewerEngine {
   /** Every bone's transform as the file authored it, so a pose can be undone. */
   private restPose: { bone: THREE.Bone; quaternion: THREE.Quaternion }[] = [];
   private panStart: { x: number; y: number; from: THREE.Vector3 } | null = null;
+  private partHighlight: THREE.Mesh | null = null;
   private drag: {
     /** The joint being rotated — the parent of the bone that was grabbed. */
     pivot: THREE.Object3D;
@@ -479,6 +482,75 @@ export class ViewerEngine {
     this.idle = 0;
   }
 
+  /* ---------------------------------------------------------------- *
+   * Editing the loaded model. None of this touches the provider.       *
+   * ---------------------------------------------------------------- */
+
+  /** Every separate piece of the model, largest first. */
+  parts(): MeshPart[] {
+    return this.model ? listParts(this.model) : [];
+  }
+
+  /** The model with those pieces gone, as a GLB. */
+  async withoutParts(ids: string[]): Promise<Blob | null> {
+    return this.model ? removeParts(this.model.clone(true), ids) : null;
+  }
+
+  /** One piece on its own, as a GLB. */
+  async partAsModel(id: string): Promise<Blob | null> {
+    return this.model ? extractPart(this.model.clone(true), id) : null;
+  }
+
+  /** The model at roughly `keep` of its triangles, as a GLB. */
+  async simplified(keep: number): Promise<Blob | null> {
+    return this.model ? decimate(this.model.clone(true), keep) : null;
+  }
+
+  /** Show a piece by tinting it, so the list and the model agree. */
+  highlightPart(id: string | null) {
+    if (!this.model) return;
+    this.partHighlight?.parent?.remove(this.partHighlight);
+    this.partHighlight = null;
+    if (!id) return;
+
+    const found = listParts(this.model).find((p) => p.id === id);
+    if (!found) return;
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(Math.max(0.02, found.size * 0.6), 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xf59e3b, transparent: true, opacity: 0.35 }),
+    );
+    marker.position.fromArray(found.centre);
+    this.partHighlight = marker;
+    this.scene.add(marker);
+  }
+
+  /**
+   * Blend shapes the file already carries. Meshy does not produce any, but a
+   * character from a tool that does — VRM, Ready Player Me, Character Creator
+   * — arrives with visemes and expressions, and those are what facial movement
+   * actually is.
+   */
+  morphTargets(): { name: string; value: number }[] {
+    const out = new Map<string, number>();
+    this.model?.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.morphTargetDictionary || !mesh.morphTargetInfluences) return;
+      for (const [name, i] of Object.entries(mesh.morphTargetDictionary)) {
+        out.set(name, mesh.morphTargetInfluences[i] ?? 0);
+      }
+    });
+    return [...out].map(([name, value]) => ({ name, value }));
+  }
+
+  setMorph(name: string, value: number) {
+    this.model?.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      const i = mesh.morphTargetDictionary?.[name];
+      if (i !== undefined && mesh.morphTargetInfluences) mesh.morphTargetInfluences[i] = value;
+    });
+    this.idle = 0;
+  }
+
   /** Put every bone back where the file had it. */
   resetPose() {
     this.restPose.forEach(({ bone, quaternion }) => bone.quaternion.copy(quaternion));
@@ -502,6 +574,10 @@ export class ViewerEngine {
     this.skinned = [];
     this.restPose = [];
     this.drag = null;
+    if (this.partHighlight) {
+      this.scene.remove(this.partHighlight);
+      this.partHighlight = null;
+    }
     if (this.wireOverlay) {
       this.root.remove(this.wireOverlay);
       this.wireOverlay = null;

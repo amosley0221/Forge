@@ -1071,6 +1071,43 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
 
   rigRef.current = rig;
 
+  /**
+   * Land an edit made on the loaded mesh as a new version.
+   *
+   * No provider is involved — the geometry was already here — so this costs
+   * nothing and the previous version stays in the history to go back to.
+   */
+  const landEdit = useCallback(
+    async (asset: Asset, blob: Blob, note: string): Promise<Asset | null> => {
+      try {
+        setJob({ running: true, label: note, percent: 60, phase: 'importing', error: null });
+        const { fileId, stats } = await storeModel(blob);
+        const version = currentVersion(asset);
+        const updated = appendVersion(asset, {
+          note,
+          prompt: '',
+          device,
+          createdAt: Date.now(),
+          stats,
+          fileId,
+          // The edit keeps its lineage: rigging and FBX export still want the
+          // provider task that produced the geometry.
+          provider: version.provider,
+          taskId: version.taskId,
+          riggedTaskId: version.riggedTaskId,
+        });
+        upsert({ ...updated, clips: mergeClips(updated.clips, stats) }, `${asset.name}: ${note}`);
+        setJob(IDLE_JOB);
+        return updated;
+      } catch (e) {
+        const error = e instanceof Error ? e.message : 'That edit could not be applied';
+        setJob({ ...IDLE_JOB, error });
+        return null;
+      }
+    },
+    [storeModel, device, upsert],
+  );
+
   /** The motion library the provider offers for a rigged model. */
   const motionActions = useCallback(async (): Promise<MeshyAction[]> => {
     try {
@@ -1181,6 +1218,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     restyle,
     providerBalance,
     activity,
+    landEdit,
     connectSync,
     disconnectSync,
     syncConnected: Boolean(syncConfig?.enabled && syncToken),

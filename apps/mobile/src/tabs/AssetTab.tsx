@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { COLORS, ago, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
-import { Appearance, ErrorPanel, ForgeViewer, StatusTag, mono } from '@forge/ui';
+import { Appearance, ErrorPanel, ForgeViewer, MeshTools, StatusTag, mono } from '@forge/ui';
 import type { ViewerEngine } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 
@@ -304,6 +304,19 @@ export function AssetTab({ s }: { s: MobileSession }) {
             {s.lastReply}
           </div>
         )}
+
+        {/* Mesh */}
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Mesh</div>
+          <MeshTools
+            asset={a}
+            engine={viewer.current}
+            busy={s.job.running}
+            say={s.say}
+            onApply={(blob, note) => s.landEdit(a, blob, note)}
+            compact
+          />
+        </div>
 
         {/* Appearance */}
         <div style={{ marginTop: 18 }}>

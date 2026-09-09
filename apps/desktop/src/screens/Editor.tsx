@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { COLORS, ago, exactTime, formatBytes, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
-import { Appearance, ErrorPanel, ForgeViewer, Panel, SectionLabel, StatusTag, mono } from '@forge/ui';
+import {
+  Appearance,
+  ErrorPanel,
+  ForgeViewer,
+  MeshTools,
+  Panel,
+  SectionLabel,
+  StatusTag,
+  mono,
+} from '@forge/ui';
 import type { ViewerEngine } from '@forge/ui';
 import type { Session } from '../session.js';
 
@@ -324,6 +333,17 @@ export function Editor({ s }: { s: Session }) {
               Add a motion clip
             </button>
           )}
+        </Panel>
+
+        <Panel style={{ padding: 12 }}>
+          <SectionLabel style={{ marginBottom: 8 }}>Mesh</SectionLabel>
+          <MeshTools
+            asset={a}
+            engine={viewer.current}
+            busy={s.job.running}
+            say={s.say}
+            onApply={(blob, note) => s.landEdit(a, blob, note)}
+          />
         </Panel>
 
         <Panel style={{ padding: 12 }}>
