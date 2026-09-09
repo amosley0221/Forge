@@ -219,6 +219,15 @@ export const STYLES: StyleGuide[] = [
     looksLike: 'Ocarina of Time 3D, Majora’s Mask 3D',
   },
   {
+    id: 'animated film',
+    label: 'animated film',
+    phrase:
+      'stylised character with appealing simplified anatomy, large expressive eyes, soft rounded features, physically based materials, subsurface scattering skin, detailed cloth and fur, cinematic soft lighting, animated feature film quality',
+    description:
+      'Stylised shapes with fully real materials — skin light scatters through, cloth and fur with true roughness. The appeal comes from lighting and material response rather than painted-in detail, so give it 4K and a generous triangle budget.',
+    looksLike: 'Kena: Bridge of Spirits, Pixar films',
+  },
+  {
     id: 'realistic PBR',
     label: 'realistic PBR',
     phrase:

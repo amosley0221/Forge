@@ -11,6 +11,13 @@ test('ids that existing projects already saved are never renamed', () => {
   }
 });
 
+test('the stylised styles stay distinct from each other', () => {
+  // Three of these live near one another; if two ever sent the same wording
+  // the picker would be lying about offering a choice.
+  const phrases = STYLES.map((s) => s.phrase);
+  assert.equal(new Set(phrases).size, phrases.length);
+});
+
 test('no two styles share an id', () => {
   const ids = STYLES.map((s) => s.id);
   assert.equal(new Set(ids).size, ids.length);
