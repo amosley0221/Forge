@@ -163,6 +163,22 @@ export async function startRigging(
   return res.result;
 }
 
+/**
+ * Rigging refuses anything it cannot read as a person. Its own wording for
+ * that — "Pose estimation failed, please provide a valid model" — reads like
+ * the file is broken, when the model is fine and simply is not a humanoid.
+ */
+export function explainRigFailure(message: string): string {
+  if (/pose estimation/i.test(message)) {
+    return (
+      'Rigging could not find a humanoid skeleton in this model. It works on characters and ' +
+      'creatures with a head, spine, arms and legs — not vehicles, props or environments. ' +
+      `(Meshy said: ${message})`
+    );
+  }
+  return message;
+}
+
 export async function riggingStatus(key: string, taskId: string): Promise<TaskStatus> {
   const job = await requestJson<unknown>(
     `${BASE}/v1/rigging/${taskId}`,

@@ -36,6 +36,7 @@ import {
   listActions,
   listRecentJobs,
   meshyRawTaskId,
+  explainRigFailure,
   rigModel,
   runGeneration,
   startRetexture,
@@ -945,7 +946,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
           setJob(IDLE_JOB);
           return null;
         }
-        const error = e instanceof Error ? e.message : 'Rigging failed';
+        const error = explainRigFailure(e instanceof Error ? e.message : 'Rigging failed');
         // The rig was charged for the moment Meshy accepted it, so leave it in
         // the pending list with the reason rather than losing the credits.
         if (paidRig) markTaskFailed(paidRig, error);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { COLORS, ago, formatSize, formatTris } from '@forge/core';
+import { COLORS, KINDS, ago, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
 import { Appearance, ErrorPanel, ForgeViewer, MeshTools, StatusTag, mono } from '@forge/ui';
 import type { ViewerEngine } from '@forge/ui';
@@ -12,6 +12,8 @@ export function AssetTab({ s }: { s: MobileSession }) {
   const [pose, setPose] = useState(false);
   const [riggedInFile, setRiggedInFile] = useState(false);
   const [held, setHeld] = useState<string | null>(null);
+  // Rigging estimates a humanoid pose; anything else has no skeleton to find.
+  const [rigAnyway, setRigAnyway] = useState(false);
   const a = s.active;
   const v = s.version;
   const [actions, setActions] = useState<MeshyAction[] | null>(null);
@@ -263,6 +265,32 @@ export function AssetTab({ s }: { s: MobileSession }) {
               This model was imported rather than generated here, so there is no provider task to
               rig. Generate a model in Forge to rig and animate it.
             </p>
+          ) : !rigged &&
+            !rigAnyway &&
+            KINDS[a.category] !== 'character' &&
+            KINDS[a.category] !== 'creature' ? (
+            <>
+              <p style={{ fontSize: 12, color: COLORS.text2, lineHeight: 1.6, margin: '0 0 10px' }}>
+                Rigging finds a humanoid skeleton — a head, spine, arms and legs. A{' '}
+                {a.category.toLowerCase()} has no pose to estimate, so the provider will refuse it,
+                and it charges for the attempt either way.
+              </p>
+              <button
+                type="button"
+                onClick={() => setRigAnyway(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: COLORS.muted,
+                  fontFamily: mono,
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                rig it anyway
+              </button>
+            </>
           ) : !rigged ? (
             <>
               <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '0 0 10px' }}>

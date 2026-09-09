@@ -61,3 +61,19 @@ test('when there is genuinely no model, the error names what did come back', asy
   reply({ status: 'SUCCEEDED', result: { thumbnail_url: 'https://x/y.png' } });
   await assert.rejects(riggingStatus('k', 't'), /URLs present: thumbnail_url/);
 });
+
+test('a pose-estimation refusal is explained rather than repeated', async () => {
+  const { explainRigFailure } = await import('../dist/index.js');
+  const raw = 'Meshy rigging failed (422): Pose estimation failed, please provide a valid model';
+  const said = explainRigFailure(raw);
+  assert.match(said, /humanoid skeleton/);
+  assert.match(said, /not vehicles, props or environments/);
+  // Meshy's own words are kept, so nothing is hidden from the user.
+  assert.ok(said.includes(raw));
+});
+
+test('any other rigging error is passed through untouched', async () => {
+  const { explainRigFailure } = await import('../dist/index.js');
+  assert.equal(explainRigFailure('Meshy rigging failed (500): server error'),
+    'Meshy rigging failed (500): server error');
+});
