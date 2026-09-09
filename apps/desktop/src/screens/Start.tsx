@@ -1,5 +1,14 @@
 import { useRef } from 'react';
-import { CATEGORIES, COLORS, STARTERS, ago, approvedCount, formatTris, reviewCount } from '@forge/core';
+import {
+  CATEGORIES,
+  COLORS,
+  STARTERS,
+  ago,
+  approvedCount,
+  exactTime,
+  formatTris,
+  reviewCount,
+} from '@forge/core';
 import { Chip, EmptyState, ErrorPanel, Panel, PendingTasks, SectionLabel, mono } from '@forge/ui';
 import type { Session } from '../session.js';
 import { UpdateBanner } from '../components/UpdateBanner.js';
@@ -30,6 +39,9 @@ function FloorGrid() {
 }
 
 export function Start({ s }: { s: Session }) {
+  const lastChanged = s.assets.length
+    ? Math.max(...s.assets.map((a) => a.updatedAt))
+    : null;
   const fileInput = useRef<HTMLInputElement | null>(null);
   const canGenerate = s.prompt.trim().length > 0 && s.canGenerate;
 
@@ -205,6 +217,16 @@ export function Start({ s }: { s: Session }) {
             {s.settings.projectName || 'Your project'} · {s.assets.length}{' '}
             {s.assets.length === 1 ? 'asset' : 'assets'}
           </SectionLabel>
+          {/* The newest change across the whole project — what you want when
+              checking whether the other device has something you do not. */}
+          {lastChanged !== null && (
+            <span
+              title={exactTime(lastChanged)}
+              style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}
+            >
+              last changed {ago(lastChanged)}
+            </span>
+          )}
         </div>
 
         {s.assets.length === 0 ? (

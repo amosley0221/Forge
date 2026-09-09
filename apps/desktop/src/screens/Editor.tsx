@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { COLORS, ago, formatBytes, formatSize, formatTris } from '@forge/core';
+import { COLORS, ago, exactTime, formatBytes, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
 import { Appearance, ErrorPanel, ForgeViewer, Panel, SectionLabel, StatusTag, mono } from '@forge/ui';
 import type { ViewerEngine } from '@forge/ui';
@@ -44,9 +44,10 @@ function HudPill({
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
     <div
+      title={title}
       style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -177,7 +178,16 @@ export function Editor({ s }: { s: Session }) {
           <Field label="Real-world size" value={v.stats.sizeMeters ? formatSize(v.stats.sizeMeters) : '—'} />
           <Field label="File" value={v.stats.bytes ? formatBytes(v.stats.bytes) : '—'} />
           <Field label="Source" value={v.note} />
-          <Field label="Created" value={ago(v.createdAt)} />
+          <Field
+            label={`${v.label} made`}
+            value={ago(v.createdAt)}
+            title={exactTime(v.createdAt)}
+          />
+          <Field
+            label="Last changed"
+            value={ago(a.updatedAt)}
+            title={exactTime(a.updatedAt)}
+          />
           {v.provider && <Field label="Provider" value={v.provider} />}
         </Panel>
 

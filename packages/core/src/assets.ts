@@ -90,6 +90,16 @@ export function ago(t: number): string {
   return Math.floor(d / 86400) + 'd ago';
 }
 
+/**
+ * The exact moment, for a tooltip. "2h ago" is fine at a glance and useless
+ * when you are trying to work out whether you have the newest copy.
+ */
+export const exactTime = (t: number): string =>
+  new Date(t).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
 export const formatTris = (n: number) => n.toLocaleString();
 
 export const formatSize = (m: number) =>

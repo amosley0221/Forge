@@ -200,10 +200,17 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     [transport, device],
   );
 
+  /**
+   * `touch: false` records the change without moving updatedAt — for things
+   * that are not edits to the asset. Which version you happen to be looking at
+   * is one: counting it made "last changed" mean "last opened", and made every
+   * click on the history strip look like a change worth syncing.
+   */
   const upsert = useCallback(
-    (asset: Asset, msg?: string) => {
+    (asset: Asset, msg?: string, opts: { touch?: boolean } = {}) => {
       const rest = assetsRef.current.filter((a) => a.id !== asset.id);
-      commit([{ ...asset, updatedAt: Date.now() }, ...rest], msg ? { msg } : {});
+      const next = opts.touch === false ? asset : { ...asset, updatedAt: Date.now() };
+      commit([next, ...rest], msg ? { msg } : {});
     },
     [commit],
   );
@@ -251,7 +258,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   );
 
   const selectVersion = useCallback(
-    (asset: Asset, index: number) => upsert({ ...asset, cur: index }),
+    (asset: Asset, index: number) => upsert({ ...asset, cur: index }, undefined, { touch: false }),
     [upsert],
   );
 

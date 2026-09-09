@@ -158,7 +158,8 @@ export function AssetTab({ s }: { s: MobileSession }) {
             ['Materials', String(v.stats.materials)],
             ['Size', v.stats.sizeMeters ? formatSize(v.stats.sizeMeters) : '—'],
             ['Clips in file', v.stats.clipNames.length ? v.stats.clipNames.join(' · ') : 'none'],
-            ['Created', ago(v.createdAt)],
+            [`${v.label} made`, ago(v.createdAt)],
+            ['Last changed', ago(a.updatedAt)],
           ].map(([k, val]) => (
             <div
               key={k}

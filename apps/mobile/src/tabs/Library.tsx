@@ -8,6 +8,9 @@ import { UpdateBanner } from '../components/UpdateBanner.js';
 const A = COLORS.accent;
 
 export function Library({ s }: { s: MobileSession }) {
+  // The newest change across the whole project — what you want when checking
+  // whether the other device has something this one does not.
+  const lastChanged = s.assets.length ? Math.max(...s.assets.map((a) => a.updatedAt)) : null;
   const [composing, setComposing] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [category, setCategory] = useState<Category>('Prop');
@@ -35,7 +38,8 @@ export function Library({ s }: { s: MobileSession }) {
           <div style={{ fontSize: 11, color: COLORS.muted }}>
             {s.assets.length === 0
               ? 'No assets yet'
-              : `${s.assets.length} asset${s.assets.length > 1 ? 's' : ''}`}
+              : `${s.assets.length} asset${s.assets.length > 1 ? 's' : ''}` +
+                (lastChanged ? ` · last changed ${ago(lastChanged)}` : '')}
           </div>
         </div>
         <div style={{ flex: 1 }} />
