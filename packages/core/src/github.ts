@@ -1,3 +1,4 @@
+import type { ActivityEntry } from './activity.js';
 import { http } from './http.js';
 import type { Asset } from './types.js';
 
@@ -34,6 +35,8 @@ export interface LibraryManifest {
    * per launch, which is both slow and a needless drain on the rate limit.
    */
   files?: string[];
+  /** What happened and where, unioned across devices. */
+  activity?: ActivityEntry[];
 }
 
 export class GitHubError extends Error {

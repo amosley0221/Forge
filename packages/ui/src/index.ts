@@ -3,6 +3,8 @@ export * from './useForge.js';
 export { SyncSettings } from './SyncSettings.js';
 export { ProviderJobs } from './ProviderJobs.js';
 export { Appearance } from './Appearance.js';
+export { ActivityLog } from './ActivityLog.js';
+export type { ActivityLogProps } from './ActivityLog.js';
 export type { AppearanceProps } from './Appearance.js';
 export type { ProviderJobsProps } from './ProviderJobs.js';
 export type { SyncSettingsProps } from './SyncSettings.js';

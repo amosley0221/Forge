@@ -9,7 +9,16 @@ import {
   formatTris,
   reviewCount,
 } from '@forge/core';
-import { Chip, EmptyState, ErrorPanel, Panel, PendingTasks, SectionLabel, mono } from '@forge/ui';
+import {
+  ActivityLog,
+  Chip,
+  EmptyState,
+  ErrorPanel,
+  Panel,
+  PendingTasks,
+  SectionLabel,
+  mono,
+} from '@forge/ui';
 import type { Session } from '../session.js';
 import { UpdateBanner } from '../components/UpdateBanner.js';
 
@@ -209,6 +218,19 @@ export function Start({ s }: { s: Session }) {
                 </button>
               ))}
             </div>
+          </Panel>
+        )}
+
+        {s.activity.length > 0 && (
+          <Panel style={{ padding: 12, marginTop: 14 }}>
+            <SectionLabel style={{ marginBottom: 9 }}>Recent changes</SectionLabel>
+            <ActivityLog
+              entries={s.activity}
+              onOpen={(id) => {
+                const asset = s.assets.find((a) => a.id === id);
+                if (asset) s.openAsset(asset.id);
+              }}
+            />
           </Panel>
         )}
 

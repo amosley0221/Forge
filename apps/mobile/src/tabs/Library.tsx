@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { CATEGORIES, COLORS, ago, approvedCount, formatTris, reviewCount } from '@forge/core';
 import type { Category } from '@forge/core';
-import { EmptyState, ErrorPanel, PendingTasks, mono } from '@forge/ui';
+import { ActivityLog, EmptyState, ErrorPanel, PendingTasks, mono } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 import { UpdateBanner } from '../components/UpdateBanner.js';
 
@@ -63,6 +63,39 @@ export function Library({ s }: { s: MobileSession }) {
       </div>
 
       <UpdateBanner say={s.say} busyWithJob={s.job.running} />
+
+      {s.activity.length > 0 && (
+        <div
+          style={{
+            padding: 12,
+            marginBottom: 12,
+            borderRadius: 12,
+            background: COLORS.surface,
+            border: `1px solid ${COLORS.hairline}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              letterSpacing: '.08em',
+              color: COLORS.muted,
+              marginBottom: 9,
+            }}
+          >
+            RECENT CHANGES
+          </div>
+          <ActivityLog
+            entries={s.activity}
+            limit={5}
+            compact
+            onOpen={(id) => {
+              const asset = s.assets.find((a) => a.id === id);
+              if (asset) s.open(asset.id);
+            }}
+          />
+        </div>
+      )}
 
       {s.job.error && (
         <div style={{ marginBottom: 12 }}>

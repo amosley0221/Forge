@@ -15,6 +15,11 @@ import {
   currentVersion,
   loadPendingTasks,
   savePendingTasks,
+  appendActivity,
+  loadActivity,
+  mergeActivity,
+  newActivity,
+  saveActivity,
   checkAccess,
   clearSyncToken,
   downloadModel,
@@ -38,6 +43,7 @@ import {
   setOnboarded,
 } from '@forge/core';
 import type {
+  ActivityEntry,
   Asset,
   MeshyAction,
   PendingTask,
@@ -120,15 +126,18 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const [s, c, done, tasks, sync, token] = await Promise.all([
+      const [s, c, done, tasks, sync, token, log] = await Promise.all([
         loadSettings(store),
         loadProvider(store, secrets),
         hasOnboarded(store),
         loadPendingTasks(store),
         loadSync(store),
         loadSyncToken(secrets),
+        loadActivity(store),
       ]);
       if (!alive) return;
+      activityRef.current = log;
+      setActivity(log);
       setSettingsState(s);
       setCredentials(c);
       setOnboardedState(done);
@@ -192,12 +201,22 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     };
   }, [transport, device, say]);
 
+  /**
+   * Every local change with a description is written into the activity log.
+   * The message was already there — it just went to a toast and vanished, so
+   * there was no way to see what had happened to a project.
+   */
   const commit = useCallback(
-    (next: Asset[], meta: SyncMeta = {}) => {
+    (next: Asset[], meta: SyncMeta = {}, assetId?: string) => {
       setAssets(next);
       transport.save(next, { from: device, ...meta });
+      if (!meta.msg) return;
+      const log = appendActivity(activityRef.current, newActivity(meta.msg, device, assetId));
+      activityRef.current = log;
+      setActivity(log);
+      void saveActivity(store, log);
     },
-    [transport, device],
+    [transport, device, store],
   );
 
   /**
@@ -210,7 +229,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     (asset: Asset, msg?: string, opts: { touch?: boolean } = {}) => {
       const rest = assetsRef.current.filter((a) => a.id !== asset.id);
       const next = opts.touch === false ? asset : { ...asset, updatedAt: Date.now() };
-      commit([next, ...rest], msg ? { msg } : {});
+      commit([next, ...rest], msg ? { msg } : {}, asset.id);
     },
     [commit],
   );
@@ -252,7 +271,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
       const clips = asset.clips.some((c) => c.name === name)
         ? asset.clips.map((c) => (c.name === name ? { ...c, status } : c))
         : [...asset.clips, { name, status }];
-      upsert({ ...asset, clips }, msg);
+      upsert({ ...asset, clips }, msg ?? `${asset.name}: ${name} marked ${status}`);
     },
     [upsert],
   );
@@ -268,7 +287,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
       const dropped = asset.versions[asset.versions.length - 1];
       if (dropped.fileId) void blobs.remove(dropped.fileId);
       const versions = asset.versions.slice(0, -1);
-      upsert({ ...asset, versions, cur: versions.length - 1 });
+      upsert({ ...asset, versions, cur: versions.length - 1 }, `${asset.name}: ${dropped.label} undone`);
       say('Reverted to ' + versions[versions.length - 1].label);
       return versions[versions.length - 1].label;
     },
@@ -291,6 +310,9 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
 
   const syncing = useRef(false);
   const recoverTaskRef = useRef<((task: PendingTask) => Promise<Asset | null>) | null>(null);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const activityRef = useRef<ActivityEntry[]>([]);
+  activityRef.current = activity;
 
   /**
    * Pull what the other device wrote, push what this one has. Model files are
@@ -311,6 +333,15 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
       try {
         const { manifest, sha } = await fetchLibrary(cfg);
         const remoteAssets = manifest?.assets ?? [];
+
+        // The other device's history is as real as this one's, so the log is a
+        // union — neither side can erase what the other did.
+        const mergedActivity = mergeActivity(activityRef.current, manifest?.activity ?? []);
+        if (mergedActivity.length !== activityRef.current.length) {
+          activityRef.current = mergedActivity;
+          setActivity(mergedActivity);
+          void saveActivity(store, mergedActivity);
+        }
         const merged = mergeLibraries(assetsRef.current, remoteAssets);
         const knownFiles = new Set(manifest?.files ?? []);
 
@@ -343,6 +374,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
         const filesChanged = knownFiles.size !== (manifest?.files?.length ?? -1);
         const changed =
           filesChanged ||
+          mergedActivity.length !== (manifest?.activity?.length ?? -1) ||
           merged.length !== remoteAssets.length ||
           merged.some((a) => {
             const r = remoteAssets.find((x) => x.id === a.id);
@@ -358,6 +390,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
               device,
               assets: merged,
               files: [...knownFiles],
+              activity: mergedActivity,
             },
             sha,
           );
@@ -1123,6 +1156,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     syncNow,
     restyle,
     providerBalance,
+    activity,
     connectSync,
     disconnectSync,
     syncConnected: Boolean(syncConfig?.enabled && syncToken),
