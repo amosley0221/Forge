@@ -2,12 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STYLES, DEFAULT_SETTINGS, styleById, stylePhrase } from '../dist/index.js';
 
-test('the stored ids stay what existing projects already saved', () => {
-  // Changing these would silently reset the style on every existing install.
-  assert.deepEqual(
-    STYLES.map((s) => s.id),
-    ['toon', 'hand-painted', 'low-poly', 'realistic PBR', 'voxel'],
-  );
+test('ids that existing projects already saved are never renamed', () => {
+  // Adding a style is fine. Renaming or removing one silently resets the style
+  // on every install that had it selected, which is why this is pinned.
+  const ids = STYLES.map((s) => s.id);
+  for (const saved of ['toon', 'hand-painted', 'low-poly', 'realistic PBR', 'voxel']) {
+    assert.ok(ids.includes(saved), `${saved} was renamed or removed`);
+  }
+});
+
+test('no two styles share an id', () => {
+  const ids = STYLES.map((s) => s.id);
+  assert.equal(new Set(ids).size, ids.length);
 });
 
 test('the default style is one that actually exists', () => {

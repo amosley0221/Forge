@@ -210,6 +210,15 @@ export const STYLES: StyleGuide[] = [
     looksLike: 'Monument Valley',
   },
   {
+    id: 'stylised realism',
+    label: 'stylised realism',
+    phrase:
+      'stylised realism, true proportions smoothed and rounded, clean readable silhouette, hand-painted texture detail, warm saturated palette, soft shading with gentle gradients, not photorealistic',
+    description:
+      'Real proportions, smoothed and rounded off, with detail painted into the texture rather than modelled. Warm and saturated, soft-shaded — clean rather than gritty, and not flat like cel shading.',
+    looksLike: 'Ocarina of Time 3D, Majora’s Mask 3D',
+  },
+  {
     id: 'realistic PBR',
     label: 'realistic PBR',
     phrase:
