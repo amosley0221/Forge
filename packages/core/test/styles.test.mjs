@@ -52,3 +52,7 @@ test('viewer preferences that used to be component state are remembered', () => 
   assert.equal(typeof DEFAULT_SETTINGS.textured, 'boolean');
   assert.ok([2048, 4096].includes(DEFAULT_SETTINGS.textureSize));
 });
+
+test('auto-rig is off by default, since rigging spends credits', () => {
+  assert.equal(DEFAULT_SETTINGS.autoRig, false);
+});

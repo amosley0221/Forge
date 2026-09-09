@@ -306,6 +306,39 @@ export function SettingsSheet({ s }: { s: MobileSession }) {
             borderTop: `1px solid ${COLORS.hairline}`,
           }}
         >
+          <span style={{ color: COLORS.muted }}>Rig characters automatically</span>
+          <button
+            type="button"
+            onClick={() => s.updateSettings({ autoRig: !s.settings.autoRig })}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: A,
+              fontFamily: mono,
+              fontSize: 13,
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            {s.settings.autoRig ? 'on' : 'off'}
+          </button>
+        </div>
+        <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '4px 0 0' }}>
+          Characters and creatures only, and only for a new asset. Rigging is a separately charged task, and it splays loose clothing — a long coat, a cape — because the skin is bound by proximity to the arms.
+        </p>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 0',
+            marginTop: 6,
+            fontSize: 13,
+            borderTop: `1px solid ${COLORS.hairline}`,
+          }}
+        >
           <span style={{ color: COLORS.muted }}>Texture new models</span>
           <button
             type="button"

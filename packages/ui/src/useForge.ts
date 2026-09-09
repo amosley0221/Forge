@@ -311,6 +311,9 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
 
   const syncing = useRef(false);
   const recoverTaskRef = useRef<((task: PendingTask) => Promise<Asset | null>) | null>(null);
+  // rig() is defined below generate(); a ref lets one call the other without
+  // reordering the whole hook.
+  const rigRef = useRef<((asset: Asset) => Promise<Asset | null>) | null>(null);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const activityRef = useRef<ActivityEntry[]>([]);
   activityRef.current = activity;
@@ -717,8 +720,24 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
 
         paidTasks.forEach(forgetTask);
         forgetTask(result.taskId);
-        setJob(IDLE_JOB);
         abort.current = null;
+
+        // Chain straight into rigging when asked. Only for a fresh character or
+        // creature: rigging a prop wastes the credits, and a new version of an
+        // existing asset is an edit rather than something to re-rig.
+        const kind = KINDS[opts.category];
+        const autoRig =
+          settings.autoRig &&
+          provider.id === 'meshy' &&
+          !opts.target &&
+          (kind === 'character' || kind === 'creature');
+        if (autoRig && rigRef.current) {
+          // A rig failure leaves the model itself safely landed.
+          const rigged = await rigRef.current(asset);
+          return rigged ?? asset;
+        }
+
+        setJob(IDLE_JOB);
         return asset;
       } catch (e) {
         abort.current = null;
@@ -1049,6 +1068,8 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
       return null;
     }
   }, [credentials]);
+
+  rigRef.current = rig;
 
   /** The motion library the provider offers for a rigged model. */
   const motionActions = useCallback(async (): Promise<MeshyAction[]> => {

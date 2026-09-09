@@ -34,6 +34,12 @@ export interface ProjectSettings {
   textured: boolean;
   /** Slowly spin the model when the viewer is left alone. */
   turntable: boolean;
+  /**
+   * Rig characters and creatures straight after generating them. Off by
+   * default: rigging is a separately charged task, and it goes badly on loose
+   * clothing, so it is not something to spend credits on unasked.
+   */
+  autoRig: boolean;
   autoClips: boolean;
   lodLevels: number;
   guide: boolean;
@@ -48,6 +54,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   textureSize: 2048,
   textured: true,
   turntable: true,
+  autoRig: false,
   autoClips: true,
   lodLevels: 4,
   guide: true,

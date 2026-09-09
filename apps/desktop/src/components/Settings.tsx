@@ -346,6 +346,18 @@ export function Settings({ s }: { s: Session }) {
             Meshy builds the shape and the texture as two separately-charged jobs. With this off you
             get bare grey geometry — no face, no clothing colour — for half the credits.
           </p>
+          <Row label="Rig characters automatically">
+            <button
+              type="button"
+              onClick={() => s.updateSettings({ autoRig: !s.settings.autoRig })}
+              style={{ background: 'none', border: 'none', color: A, fontSize: 11, cursor: 'pointer' }}
+            >
+              {s.settings.autoRig ? 'on' : 'off'}
+            </button>
+          </Row>
+          <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '6px 0 0' }}>
+            Characters and creatures only, and only for a new asset. Rigging is a separately charged task, and it splays loose clothing — a long coat, a cape — because the skin is bound by proximity to the arms.
+          </p>
           <Row label="Guide panel">
             <button
               type="button"
