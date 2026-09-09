@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { COLORS, PROVIDERS, STYLES, providerById } from '@forge/core';
+import { COLORS, PROVIDERS, STYLES, providerById, styleById } from '@forge/core';
 import type { ProviderId } from '@forge/core';
 import { ProviderJobs, Spinner, SyncSettings, mono } from '@forge/ui';
 import type { MobileSession } from './session.js';
@@ -11,6 +11,7 @@ const A = COLORS.accent;
 
 export function SettingsSheet({ s }: { s: MobileSession }) {
   const [credits, setCredits] = useState<number | null>(null);
+  const style = styleById(s.settings.style);
 
   // Read the balance whenever this sheet opens and after any job, so the cost
   // of a generation can be seen rather than guessed at.
@@ -234,12 +235,12 @@ export function SettingsSheet({ s }: { s: MobileSession }) {
         <Section title="Generation defaults" />
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
           {STYLES.map((st) => {
-            const on = st === s.settings.style;
+            const on = st.id === s.settings.style;
             return (
               <button
-                key={st}
+                key={st.id}
                 type="button"
-                onClick={() => s.updateSettings({ style: st })}
+                onClick={() => s.updateSettings({ style: st.id })}
                 style={{
                   padding: '7px 12px',
                   borderRadius: 20,
@@ -250,11 +251,43 @@ export function SettingsSheet({ s }: { s: MobileSession }) {
                   cursor: 'pointer',
                 }}
               >
-                {st}
+                {st.label}
               </button>
             );
           })}
         </div>
+
+        {/* A style is wording, not a provider mode, so the only honest example
+            is to say plainly what the words ask for and show them. */}
+        {style && (
+          <div
+            style={{
+              padding: 11,
+              marginBottom: 6,
+              borderRadius: 10,
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.hairline}`,
+            }}
+          >
+            <p style={{ fontSize: 12, color: COLORS.text2, lineHeight: 1.6, margin: 0 }}>
+              {style.description}
+            </p>
+            <p style={{ fontSize: 11, color: COLORS.muted, lineHeight: 1.6, margin: '6px 0 0' }}>
+              Looks like: {style.looksLike}
+            </p>
+            <p
+              style={{
+                fontFamily: mono,
+                fontSize: 10,
+                color: COLORS.disabled,
+                lineHeight: 1.6,
+                margin: '8px 0 0',
+              }}
+            >
+              added to your prompt: “{style.phrase}”
+            </p>
+          </div>
+        )}
         <Row label="Triangle budget" value={s.settings.triBudget.toLocaleString()} />
         <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '4px 0 0' }}>
           Passed to the provider as a target polycount. What you actually get back is whatever it

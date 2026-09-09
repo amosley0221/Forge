@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
-import { COLORS, PROVIDERS, STYLES, formatBytes, httpClientName, providerById } from '@forge/core';
+import {
+  COLORS,
+  PROVIDERS,
+  STYLES,
+  formatBytes,
+  httpClientName,
+  providerById,
+  styleById,
+} from '@forge/core';
 import type { ProviderId } from '@forge/core';
 import { Chip, Panel, ProviderJobs, SectionLabel, Spinner, SyncSettings, mono } from '@forge/ui';
 import type { Session } from '../session.js';
@@ -51,6 +59,8 @@ export function Settings({ s }: { s: Session }) {
       setLoadingCredits(false);
     });
   }, [s.credentials.provider, s.job.running]);
+
+  const style = styleById(s.settings.style);
 
   const cachedFiles = s.assets.reduce((n, a) => n + a.versions.filter((v) => v.fileId).length, 0);
   const cachedBytes = s.assets.reduce(
@@ -251,13 +261,46 @@ export function Settings({ s }: { s: Session }) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
             {STYLES.map((st) => (
               <Chip
-                key={st}
-                label={st}
-                on={st === s.settings.style}
-                onClick={() => s.updateSettings({ style: st })}
+                key={st.id}
+                label={st.label}
+                on={st.id === s.settings.style}
+                onClick={() => s.updateSettings({ style: st.id })}
               />
             ))}
           </div>
+
+          {/* A style is wording, not a provider mode, so the only honest
+              example is to say plainly what the words ask for and show them. */}
+          {style && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: 10,
+                borderRadius: 8,
+                background: COLORS.surface,
+                border: `1px solid ${COLORS.hairline}`,
+              }}
+            >
+              <p style={{ fontSize: 11, color: COLORS.text2, lineHeight: 1.6, margin: 0 }}>
+                {style.description}
+              </p>
+              <p style={{ fontSize: 10, color: COLORS.muted, lineHeight: 1.6, margin: '6px 0 0' }}>
+                Looks like: {style.looksLike}
+              </p>
+              <p
+                style={{
+                  fontFamily: mono,
+                  fontSize: 10,
+                  color: COLORS.disabled,
+                  lineHeight: 1.6,
+                  margin: '8px 0 0',
+                  wordBreak: 'break-word',
+                }}
+              >
+                added to your prompt: “{style.phrase}”
+              </p>
+            </div>
+          )}
           <Row label="Triangle budget">
             <input
               type="number"

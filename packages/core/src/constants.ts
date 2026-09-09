@@ -167,4 +167,68 @@ export const ANIM_WORDS = [
   'breathe',
 ];
 
-export const STYLES = ['toon', 'hand-painted', 'low-poly', 'realistic PBR', 'voxel'];
+export interface StyleGuide {
+  /** Stored in settings; unchanged so existing projects keep their choice. */
+  id: string;
+  label: string;
+  /**
+   * What the provider is actually told. A style is not a mode the provider
+   * offers — it is wording appended to the prompt, so one vague word gives
+   * vague results and a described look gives a consistent one.
+   */
+  phrase: string;
+  /** What you get, in plain words. */
+  description: string;
+  /** A recognisable game that looks like this. */
+  looksLike: string;
+}
+
+export const STYLES: StyleGuide[] = [
+  {
+    id: 'toon',
+    label: 'toon',
+    phrase: 'toon shaded, bold clean silhouette, flat saturated colours, crisp cel shading',
+    description:
+      'Flat, saturated colour with hard shading edges. Bold shapes and very little surface texture.',
+    looksLike: 'Fortnite, Wind Waker',
+  },
+  {
+    id: 'hand-painted',
+    label: 'hand-painted',
+    phrase:
+      'hand-painted texture, painterly brush strokes, warm stylised colours, shading baked into the texture',
+    description:
+      'Detail painted into the texture rather than modelled — visible brush strokes and painted highlights.',
+    looksLike: 'World of Warcraft',
+  },
+  {
+    id: 'low-poly',
+    label: 'low-poly',
+    phrase: 'low poly, faceted flat-shaded surfaces, few large triangles, simple flat colours',
+    description:
+      'Deliberately few, large flat faces you can see. Simple colours, no fine detail, very cheap to render.',
+    looksLike: 'Monument Valley',
+  },
+  {
+    id: 'realistic PBR',
+    label: 'realistic PBR',
+    phrase:
+      'photorealistic, physically based materials, detailed albedo roughness and normal maps, true-to-life surface detail',
+    description:
+      'Photoreal materials with real roughness and normal detail. Needs the most triangles and a 4K texture to hold up.',
+    looksLike: 'most modern AAA games',
+  },
+  {
+    id: 'voxel',
+    label: 'voxel',
+    phrase: 'voxel art, built from uniform cubes, blocky stair-stepped forms, one flat colour per cube',
+    description: 'Built from cubes. Blocky by design — no smooth curves anywhere.',
+    looksLike: 'Minecraft',
+  },
+];
+
+export const styleById = (id: string): StyleGuide | undefined =>
+  STYLES.find((s) => s.id === id);
+
+/** The wording sent to the provider for a stored style id. */
+export const stylePhrase = (id: string): string => styleById(id)?.phrase ?? id;
