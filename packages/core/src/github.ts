@@ -74,6 +74,30 @@ async function request(
   return res;
 }
 
+/**
+ * Fetch one of GitHub's signed download URLs.
+ *
+ * These do not go through `request`, so without this a transport failure threw
+ * a bare "Failed to fetch" with no host and no operation attached — which is
+ * exactly as much as it told the user.
+ */
+async function fetchSigned(url: string, what: string): Promise<Response> {
+  try {
+    return await http()(url);
+  } catch (e) {
+    const host = (() => {
+      try {
+        return new URL(url).host;
+      } catch {
+        return 'the download host';
+      }
+    })();
+    throw new GitHubError(
+      `Could not download ${what} from ${host} (${e instanceof Error ? e.message : 'network error'}).`,
+    );
+  }
+}
+
 async function failure(res: Response, what: string): Promise<GitHubError> {
   let detail = '';
   try {
@@ -207,7 +231,7 @@ export async function fetchLibrary(
   if (meta.content && meta.encoding === 'base64') {
     text = new TextDecoder().decode(decodeBase64(meta.content));
   } else if (meta.download_url) {
-    const res = await http()(meta.download_url);
+    const res = await fetchSigned(meta.download_url, 'the library manifest');
     if (!res.ok) throw new GitHubError(`Could not download the library manifest (${res.status})`);
     text = await res.text();
   } else {
@@ -253,20 +277,31 @@ export async function uploadModel(
 }
 
 export async function downloadModel(cfg: GitHubConfig, fileId: string): Promise<Blob | null> {
-  const meta = await getMeta(cfg, modelPath(fileId));
+  const path = modelPath(fileId);
+  const meta = await getMeta(cfg, path);
   if (!meta) return null;
 
-  // Files over 1 MB come back without inline content, so use the signed URL.
-  if (meta.download_url) {
-    const res = await http()(meta.download_url);
-    if (!res.ok) throw new GitHubError(`Could not download model ${fileId} (${res.status})`);
-    return res.blob();
-  }
+  // Small files arrive inline.
   if (meta.content && meta.encoding === 'base64') {
     const bytes = decodeBase64(meta.content);
     return new Blob([bytes.buffer as ArrayBuffer], { type: 'model/gltf-binary' });
   }
-  return null;
+
+  // Anything over 1 MB comes back without content. Ask the same API host that
+  // every other call already reaches, for the raw bytes, rather than the
+  // signed download URL on a different host — one fewer host that has to be
+  // reachable and allowed, and it carries the token we already send.
+  const raw = await request(cfg, `/repos/${cfg.owner}/${cfg.repo}/contents/${path}?ref=${cfg.branch}`, {
+    headers: { accept: 'application/vnd.github.raw' },
+  });
+  if (raw.ok) return raw.blob();
+
+  if (meta.download_url) {
+    const res = await fetchSigned(meta.download_url, `model ${fileId}`);
+    if (!res.ok) throw new GitHubError(`Could not download model ${fileId} (${res.status})`);
+    return res.blob();
+  }
+  throw await failure(raw, `Downloading model ${fileId}`);
 }
 
 /* ------------------------------------------------------------------ *
