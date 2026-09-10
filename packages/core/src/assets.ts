@@ -82,6 +82,42 @@ export function nameFrom(source: string): string {
   );
 }
 
+/** Longest title worth keeping: it ends up in filenames and zip entry paths. */
+export const MAX_NAME = 40;
+
+/**
+ * Windows refuses to create a file with any of these as its stem, extension or
+ * not — and the desktop app saves exports by name.
+ */
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * Turn a title a person typed into one that is safe to use as an asset name.
+ *
+ * A name is not only a label: it becomes the export filename, the stem of the
+ * `.mtl` an OBJ references, and the path of every texture inside the exported
+ * zip. So a title with a slash, a quote or a leading dot is not a cosmetic
+ * problem — it produces a zip that unpacks somewhere unexpected, or an export
+ * that silently fails to save. Spaces become underscores, anything outside
+ * `A-Z a-z 0-9 _ -` is dropped, and case is left alone: it is the user's title.
+ *
+ * Returns null when nothing usable survives, so the caller can say so rather
+ * than quietly renaming an asset to `asset`.
+ */
+export function sanitizeName(input: string): string | null {
+  const cleaned = input
+    .normalize('NFKD')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .replace(/_{2,}/g, '_')
+    .replace(/^[-_]+|[-_]+$/g, '')
+    .slice(0, MAX_NAME)
+    .replace(/[-_]+$/, '');
+  if (!cleaned) return null;
+  return RESERVED.test(cleaned) ? cleaned + '_' : cleaned;
+}
+
 export function ago(t: number): string {
   const d = Math.max(0, Date.now() - t) / 1000;
   if (d < 60) return 'just now';

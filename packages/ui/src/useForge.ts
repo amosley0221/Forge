@@ -9,6 +9,7 @@ import {
   loadProvider,
   loadSettings,
   nameFrom,
+  sanitizeName,
   providerById,
   stylePhrase,
   animateModel,
@@ -266,6 +267,27 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
       if (activeId === asset.id) setActiveId(null);
     },
     [blobs, commit, activeId],
+  );
+
+  /**
+   * Give an asset a different title.
+   *
+   * The name is what every export is filed under, so it is sanitised rather
+   * than taken literally — and the rename is refused outright when nothing
+   * usable is left, instead of silently substituting something.
+   */
+  const renameAsset = useCallback(
+    (asset: Asset, title: string): string | null => {
+      const name = sanitizeName(title);
+      if (!name) {
+        say('A name needs at least one letter or number.');
+        return null;
+      }
+      if (name === asset.name) return name;
+      upsert({ ...asset, name }, `${asset.name} renamed to ${name}`);
+      return name;
+    },
+    [upsert, say],
   );
 
   const setClipStatus = useCallback(
@@ -1203,6 +1225,7 @@ export function useForge({ device, store, secrets, blobs, remote }: UseForgeOpti
     upsert,
     commit,
     removeAsset,
+    renameAsset,
     setClipStatus,
     selectVersion,
     undoLast,

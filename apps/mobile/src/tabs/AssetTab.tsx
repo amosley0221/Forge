@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { COLORS, KINDS, ago, formatSize, formatTris } from '@forge/core';
 import type { MeshyAction } from '@forge/core';
-import { Appearance, ErrorPanel, ForgeViewer, MeshTools, StatusTag, mono } from '@forge/ui';
+import { Appearance, EditableTitle, ErrorPanel, ForgeViewer, MeshTools, StatusTag, mono } from '@forge/ui';
 import type { ViewerEngine } from '@forge/ui';
 import type { MobileSession } from '../session.js';
 
@@ -40,7 +40,7 @@ export function AssetTab({ s }: { s: MobileSession }) {
           ‹
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>{a.name}</div>
+          <EditableTitle value={a.name} compact onCommit={(next) => s.renameAsset(a, next)} />
           <div style={{ fontFamily: mono, fontSize: 10, color: COLORS.muted }}>
             {v.label} · {formatTris(v.stats.triangles)} tris · {v.note}
           </div>

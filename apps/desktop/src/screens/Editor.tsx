@@ -3,6 +3,7 @@ import { COLORS, KINDS, ago, exactTime, formatBytes, formatSize, formatTris } fr
 import type { MeshyAction } from '@forge/core';
 import {
   Appearance,
+  EditableTitle,
   ErrorPanel,
   ForgeViewer,
   MeshTools,
@@ -179,9 +180,12 @@ export function Editor({ s }: { s: Session }) {
 
         <Panel style={{ padding: 12 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {s.selected ? `${a.name} › ${s.selected}` : a.name}
-            </div>
+            <EditableTitle
+              value={a.name}
+              suffix={s.selected ?? undefined}
+              onCommit={(next) => s.renameAsset(a, next)}
+              style={{ flex: 1 }}
+            />
             <div style={{ fontSize: 11, color: COLORS.muted }}>{v.label}</div>
           </div>
 

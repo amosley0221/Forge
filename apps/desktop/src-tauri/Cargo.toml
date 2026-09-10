@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "0.5.31"
+version = "0.5.32"
 description = "Forge — AI 3D game asset studio"
 authors = ["Dustline"]
 edition = "2021"
